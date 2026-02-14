@@ -1,5 +1,28 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, RotateCcw, Keyboard, Trophy, AlertCircle, Zap, Trash2, Settings, Volume2, VolumeX, Clock, BarChart2, X, Target, CheckSquare, Eye, EyeOff, Languages, Pause, LogOut, Home, Scale, Gavel, BookOpen, Sliders, Delete } from 'lucide-react';
+import { Play, RotateCcw, Keyboard, Trophy, AlertCircle, Zap, Trash2, Settings, Volume2, VolumeX, Clock, BarChart2, X, Target, CheckSquare, Eye, EyeOff, Languages, Pause, LogOut, Home, Scale, Gavel, BookOpen, Sliders, Delete, Crown } from 'lucide-react';
+
+// Firebase imports
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+import { getFirestore, collection, addDoc, query, orderBy, limit, getDocs, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+// Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyDfXaHEiVbNNPJR9Jq5gGq0qVvZq5q5q5q",
+  authDomain: "typing-game-ranking.firebaseapp.com",
+  projectId: "typing-game-ranking",
+  storageBucket: "typing-game-ranking.appspot.com",
+  messagingSenderId: "123456789012",
+  appId: "1:123456789012:web:abcdef1234567890abcdef"
+};
+
+// Initialize Firebase
+let app, db;
+try {
+  app = initializeApp(firebaseConfig);
+  db = getFirestore(app);
+} catch (error) {
+  console.error("Firebase initialization error:", error);
+}
 
 // --- ローマ字変換テーブル (完全柔軟化版・X優先・分解打ち網羅) ---
 const KANA_MAP = {
@@ -894,6 +917,12 @@ export default function AdaptiveTyper() {
   const [showSettings, setShowSettings] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showKeyboardSelector, setShowKeyboardSelector] = useState(false);
+  const [showRanking, setShowRanking] = useState(false);
+  const [showUsernameInput, setShowUsernameInput] = useState(false);
+  const [username, setUsername] = useState('');
+  const [rankings, setRankings] = useState([]);
+  const [isSubmittingScore, setIsSubmittingScore] = useState(false);
+  const [isLoadingRankings, setIsLoadingRankings] = useState(false);
 
   const [timeLeft, setTimeLeft] = useState(settings.duration);
   const [missStats, setMissStats] = useState(() => {
@@ -916,6 +945,56 @@ export default function AdaptiveTyper() {
       console.error("Audio playback error:", e);
     }
   }, [settings.sound]);
+
+  // Firebase Functions
+  const submitScore = useCallback(async (playerName, playerScore) => {
+    if (!db) {
+      console.error("Firebase not initialized");
+      return false;
+    }
+    
+    setIsSubmittingScore(true);
+    try {
+      await addDoc(collection(db, 'rankings'), {
+        username: playerName,
+        score: playerScore,
+        timestamp: serverTimestamp()
+      });
+      console.log("Score submitted successfully");
+      return true;
+    } catch (error) {
+      console.error("Error submitting score:", error);
+      return false;
+    } finally {
+      setIsSubmittingScore(false);
+    }
+  }, []);
+
+  const fetchRankings = useCallback(async () => {
+    if (!db) {
+      console.error("Firebase not initialized");
+      return;
+    }
+    
+    setIsLoadingRankings(true);
+    try {
+      const q = query(
+        collection(db, 'rankings'),
+        orderBy('score', 'desc'),
+        limit(50)
+      );
+      const querySnapshot = await getDocs(q);
+      const rankingsData = [];
+      querySnapshot.forEach((doc) => {
+        rankingsData.push({ id: doc.id, ...doc.data() });
+      });
+      setRankings(rankingsData);
+    } catch (error) {
+      console.error("Error fetching rankings:", error);
+    } finally {
+      setIsLoadingRankings(false);
+    }
+  }, []);
 
   // FocusKeysを保存
   useEffect(() => {
@@ -1503,6 +1582,177 @@ export default function AdaptiveTyper() {
   );
 
   // --- Components: Stats Viewer Modal ---
+  // Ranking Modal Component
+  const RankingModal = () => {
+    useEffect(() => {
+      if (showRanking) {
+        fetchRankings();
+      }
+    }, [showRanking]);
+
+    return (
+      <div className="absolute inset-0 bg-slate-900/95 z-50 flex items-center justify-center p-4 backdrop-blur-md animate-in fade-in duration-200">
+        <div className="bg-slate-800 rounded-2xl border border-slate-700 w-full max-w-3xl h-[80vh] flex flex-col shadow-2xl">
+          {/* Header */}
+          <div className="p-6 border-b border-slate-700 flex justify-between items-center">
+            <h2 className="text-2xl font-bold flex items-center gap-3">
+              <Crown className="w-6 h-6 text-yellow-400" /> 
+              Online Ranking
+              <span className="text-sm font-normal text-slate-400 ml-2">トップ50</span>
+            </h2>
+            <button onClick={() => setShowRanking(false)} className="p-2 hover:bg-slate-700 rounded-full transition-colors">
+              <X className="w-6 h-6 text-slate-400"/>
+            </button>
+          </div>
+
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {isLoadingRankings ? (
+              <div className="h-full flex flex-col items-center justify-center text-slate-500 space-y-4">
+                <Crown className="w-16 h-16 text-slate-700 animate-pulse" />
+                <p>ランキングを読み込み中...</p>
+              </div>
+            ) : rankings.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-slate-500 space-y-4">
+                <Trophy className="w-16 h-16 text-slate-700" />
+                <p>まだランキングデータがありません。最初のスコアを登録しましょう！</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {rankings.map((rank, index) => (
+                  <div key={rank.id} className={`flex items-center justify-between p-4 rounded-xl border transition-all
+                    ${index === 0 ? 'bg-gradient-to-r from-yellow-600/20 to-yellow-700/10 border-yellow-500/50' : 
+                      index === 1 ? 'bg-gradient-to-r from-gray-500/20 to-gray-600/10 border-gray-400/50' : 
+                      index === 2 ? 'bg-gradient-to-r from-orange-600/20 to-orange-700/10 border-orange-500/50' : 
+                      'bg-slate-700/30 border-slate-600/30 hover:bg-slate-700/50'}`}>
+                    <div className="flex items-center gap-4 flex-1">
+                      <span className={`flex items-center justify-center min-w-[2.5rem] h-10 rounded-lg font-bold text-lg
+                        ${index === 0 ? 'bg-yellow-500 text-black' : 
+                          index === 1 ? 'bg-gray-400 text-black' : 
+                          index === 2 ? 'bg-orange-600 text-white' : 'bg-slate-600 text-slate-300'}`}>
+                        {index + 1}
+                      </span>
+                      <div className="flex-1">
+                        <div className="text-lg font-bold text-white">{rank.username || 'Anonymous'}</div>
+                        {rank.timestamp && (
+                          <div className="text-xs text-slate-400">
+                            {new Date(rank.timestamp?.toDate ? rank.timestamp.toDate() : rank.timestamp).toLocaleDateString('ja-JP')}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className={`text-2xl font-bold font-mono
+                        ${index === 0 ? 'text-yellow-400' : 
+                          index === 1 ? 'text-gray-300' : 
+                          index === 2 ? 'text-orange-400' : 'text-cyan-400'}`}>
+                        {rank.score.toLocaleString()}
+                      </span>
+                      <span className="text-xs text-slate-500 block">points</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="p-6 border-t border-slate-700 bg-slate-800/50 flex justify-end items-center rounded-b-2xl">
+            <button 
+              onClick={() => setShowRanking(false)}
+              className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-bold transition-colors"
+            >
+              閉じる
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Username Input Modal Component
+  const UsernameInputModal = () => {
+    const [tempUsername, setTempUsername] = useState(username || '');
+    
+    const handleSubmit = async () => {
+      const finalUsername = tempUsername.trim() || 'Anonymous';
+      setUsername(finalUsername);
+      
+      const success = await submitScore(finalUsername, score);
+      if (success) {
+        setShowUsernameInput(false);
+        // Optionally show ranking after submission
+        fetchRankings();
+        setShowRanking(true);
+      }
+    };
+
+    const handleSkip = () => {
+      setShowUsernameInput(false);
+    };
+
+    return (
+      <div className="absolute inset-0 bg-slate-900/95 z-50 flex items-center justify-center p-4 backdrop-blur-md animate-in fade-in duration-200">
+        <div className="bg-slate-800 rounded-2xl border border-slate-700 w-full max-w-md shadow-2xl p-8">
+          <div className="text-center space-y-6">
+            <div className="space-y-2">
+              <Trophy className="w-16 h-16 text-yellow-400 mx-auto" />
+              <h2 className="text-3xl font-bold">おめでとうございます！</h2>
+              <div className="text-cyan-400 text-5xl font-black">{score.toLocaleString()}</div>
+              <p className="text-slate-400">スコアをランキングに登録しますか？</p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm text-slate-400 block text-left">ユーザー名（オプション）</label>
+              <input
+                type="text"
+                value={tempUsername}
+                onChange={(e) => setTempUsername(e.target.value)}
+                placeholder="Anonymous"
+                maxLength={20}
+                className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 transition-colors"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSubmit();
+                  }
+                }}
+              />
+              <p className="text-xs text-slate-500 text-left">未入力の場合は「Anonymous」として登録されます</p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={handleSkip}
+                disabled={isSubmittingScore}
+                className="flex-1 px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-bold transition-colors disabled:opacity-50"
+              >
+                スキップ
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={isSubmittingScore}
+                className="flex-1 px-6 py-3 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isSubmittingScore ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    送信中...
+                  </>
+                ) : (
+                  <>
+                    <Crown className="w-5 h-5" />
+                    登録する
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const StatsPanel = () => {
     const sortedStats = Object.entries(missStats).sort(([, a], [, b]) => b - a);
     
@@ -1578,6 +1828,16 @@ export default function AdaptiveTyper() {
         {showKeyboardSelector && <KeyboardSelector />}
         {showSettings && <SettingsPanel />}
         {showStats && <StatsPanel />}
+        {showRanking && <RankingModal />}
+        
+        {/* Ranking Button - Top Left */}
+        <button 
+          onClick={() => setShowRanking(true)}
+          className="absolute top-6 left-6 p-3 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-400 hover:text-yellow-400 transition-all border border-slate-700 hover:border-yellow-400 z-10"
+          style={{ position: 'fixed', top: '10px', left: '10px' }}
+        >
+          <Crown className="w-6 h-6" />
+        </button>
         
         {/* Settings Button */}
         <button 
@@ -1657,6 +1917,8 @@ export default function AdaptiveTyper() {
     return (
       <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-4 font-sans select-none">
         {showStats && <StatsPanel />}
+        {showRanking && <RankingModal />}
+        {showUsernameInput && <UsernameInputModal />}
 
         <div className="max-w-2xl w-full bg-slate-800 rounded-3xl p-8 border border-slate-700 shadow-2xl space-y-8 animate-in zoom-in-95 duration-300">
           <div className="text-center space-y-2">
@@ -1675,6 +1937,22 @@ export default function AdaptiveTyper() {
                 {Object.values(missStats).reduce((a, b) => a + b, 0)}
               </span>
             </div>
+          </div>
+
+          {/* Submit to Ranking Button */}
+          <div className="flex gap-3">
+            <button 
+              onClick={() => setShowUsernameInput(true)}
+              className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-yellow-600 hover:bg-yellow-500 rounded-xl font-bold transition-colors shadow-lg hover:shadow-yellow-500/25"
+            >
+              <Crown className="w-5 h-5" /> ランキングに登録
+            </button>
+            <button 
+              onClick={() => setShowRanking(true)}
+              className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold transition-colors"
+            >
+              <Trophy className="w-5 h-5" /> ランキングを見る
+            </button>
           </div>
 
           <div className="space-y-3">
@@ -1726,6 +2004,18 @@ export default function AdaptiveTyper() {
   // --- Playing UI ---
   return (
     <div className="min-h-screen bg-slate-900 text-white flex flex-col font-sans select-none overflow-hidden">
+      
+      {/* Modals */}
+      {showRanking && <RankingModal />}
+      
+      {/* Ranking Button - Fixed Top Left */}
+      <button 
+        onClick={() => setShowRanking(true)}
+        className="fixed top-3 left-3 p-2 bg-slate-800/80 hover:bg-slate-700 rounded-full text-slate-400 hover:text-yellow-400 transition-all border border-slate-700 hover:border-yellow-400 z-20 backdrop-blur-sm"
+        style={{ position: 'fixed', top: '10px', left: '10px' }}
+      >
+        <Crown className="w-5 h-5" />
+      </button>
       
       {/* Animation Styles */}
       <style>{`
