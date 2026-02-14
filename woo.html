@@ -1646,7 +1646,14 @@ export default function AdaptiveTyper() {
                         <div className="text-lg font-bold text-white">{rank.username || 'Anonymous'}</div>
                         {rank.timestamp && (
                           <div className="text-xs text-slate-400">
-                            {new Date(rank.timestamp?.toDate ? rank.timestamp.toDate() : rank.timestamp).toLocaleDateString('ja-JP')}
+                            {(() => {
+                              try {
+                                const date = rank.timestamp?.toDate ? rank.timestamp.toDate() : new Date(rank.timestamp);
+                                return date instanceof Date && !isNaN(date) ? date.toLocaleDateString('ja-JP') : '';
+                              } catch (e) {
+                                return '';
+                              }
+                            })()}
                           </div>
                         )}
                       </div>
@@ -1843,8 +1850,7 @@ export default function AdaptiveTyper() {
         {/* Ranking Button - Top Left */}
         <button 
           onClick={() => setShowRanking(true)}
-          className="absolute top-6 left-6 p-3 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-400 hover:text-yellow-400 transition-all border border-slate-700 hover:border-yellow-400 z-10"
-          style={{ position: 'fixed', top: '10px', left: '10px' }}
+          className="fixed top-3 left-3 p-3 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-400 hover:text-yellow-400 transition-all border border-slate-700 hover:border-yellow-400 z-10"
         >
           <Crown className="w-6 h-6" />
         </button>
@@ -2022,7 +2028,6 @@ export default function AdaptiveTyper() {
       <button 
         onClick={() => setShowRanking(true)}
         className="fixed top-3 left-3 p-2 bg-slate-800/80 hover:bg-slate-700 rounded-full text-slate-400 hover:text-yellow-400 transition-all border border-slate-700 hover:border-yellow-400 z-20 backdrop-blur-sm"
-        style={{ position: 'fixed', top: '10px', left: '10px' }}
       >
         <Crown className="w-5 h-5" />
       </button>
