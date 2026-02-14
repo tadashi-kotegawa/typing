@@ -1,0 +1,1945 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Play, RotateCcw, Keyboard, Trophy, AlertCircle, Zap, Trash2, Settings, Volume2, VolumeX, Clock, BarChart2, X, Target, CheckSquare, Eye, EyeOff, Languages, Pause, LogOut, Home, Scale, Gavel, BookOpen, Sliders, Delete } from 'lucide-react';
+
+// --- ローマ字変換テーブル (完全柔軟化版・X優先・分解打ち網羅) ---
+const KANA_MAP = {
+  'あ': ['a'], 'い': ['i', 'yi'], 'う': ['u', 'wu', 'whu'], 'え': ['e'], 'お': ['o'],
+  'か': ['ka', 'ca'], 'き': ['ki'], 'く': ['ku', 'cu', 'qu'], 'け': ['ke'], 'こ': ['ko', 'co'],
+  'さ': ['sa'], 'し': ['shi', 'si', 'ci'], 'す': ['su'], 'せ': ['se', 'ce'], 'そ': ['so'],
+  'た': ['ta'], 'ち': ['chi', 'ti'], 'つ': ['tsu', 'tu'], 'て': ['te'], 'と': ['to'],
+  'な': ['na'], 'に': ['ni'], 'ぬ': ['nu'], 'ね': ['ne'], 'の': ['no'],
+  'は': ['ha'], 'ひ': ['hi'], 'ふ': ['fu', 'hu'], 'へ': ['he'], 'ほ': ['ho'],
+  'ま': ['ma'], 'み': ['mi'], 'む': ['mu'], 'め': ['me'], 'も': ['mo'],
+  'や': ['ya'], 'ゆ': ['yu'], 'よ': ['yo'],
+  'ら': ['ra'], 'り': ['ri'], 'る': ['ru'], 'れ': ['re'], 'ろ': ['ro'],
+  'わ': ['wa'], 'を': ['wo'], 'ん': ['nn', 'xn', 'n'],
+  'が': ['ga'], 'ぎ': ['gi'], 'ぐ': ['gu'], 'げ': ['ge'], 'ご': ['go'],
+  'ざ': ['za'], 'じ': ['ji', 'zi'], 'ず': ['zu'], 'ぜ': ['ze'], 'ぞ': ['zo'],
+  'だ': ['da'], 'ぢ': ['ji', 'di'], 'づ': ['zu', 'du'], 'で': ['de'], 'ど': ['do'],
+  'ば': ['ba'], 'び': ['bi'], 'ぶ': ['bu'], 'べ': ['be'], 'ぼ': ['bo'],
+  'ぱ': ['pa'], 'ぴ': ['pi'], 'ぷ': ['pu'], 'ぺ': ['pe'], 'ぽ': ['po'],
+  // 小さい文字 (X優先)
+  'ぁ': ['xa', 'la'], 'ぃ': ['xi', 'li'], 'ぅ': ['xu', 'lu'], 'ぇ': ['xe', 'le'], 'ぉ': ['xo', 'lo'],
+  'ゃ': ['xya', 'lya'], 'ゅ': ['xyu', 'lyu'], 'ょ': ['xyo', 'lyo'], 
+  'っ': ['xtu', 'xtsu', 'ltsu', 'ltu'], // 修正: tsu(つ)を除外、ltuを追加
+  'ー': ['-']
+};
+
+// 拗音・特殊音 (2文字以上で構成される音)
+// 基本形に加え、分解打ち（前の文字 + x/l + 小さい文字）も網羅
+const COMBO_MAP = {
+  // きゃ行
+  'きゃ': ['kya', 'kicya', 'kixya', 'kilya'], 
+  'きゅ': ['kyu', 'kicyu', 'kixyu', 'kilyu'], 
+  'きょ': ['kyo', 'kicyo', 'kixyo', 'kilyo'],
+  // しゃ行
+  'しゃ': ['sha', 'sya', 'shixya', 'shilya', 'sixya', 'silya', 'cixya', 'cilya'], 
+  'しゅ': ['shu', 'syu', 'shixyu', 'shilyu', 'sixyu', 'silyu', 'cixyu', 'cilyu'], 
+  'しょ': ['sho', 'syo', 'shixyo', 'shilyo', 'sixyo', 'silyo', 'cixyo', 'cilyo'],
+  // ちゃ行
+  'ちゃ': ['cha', 'tya', 'cya', 'chixya', 'chilya', 'tixya', 'tilya'], 
+  'ちゅ': ['chu', 'tyu', 'cyu', 'chixyu', 'chilyu', 'tixyu', 'tilyu'], 
+  'ちょ': ['cho', 'tyo', 'cyo', 'chixyo', 'chilyo', 'tixya', 'tilyo'],
+  // にゃ行
+  'にゃ': ['nya', 'nixya', 'nilya'], 
+  'にゅ': ['nyu', 'nixyu', 'nilyu'], 
+  'にょ': ['nyo', 'nixyo', 'nilyo'],
+  // ひゃ行
+  'ひゃ': ['hya', 'hixya', 'hilya'], 
+  'ひゅ': ['hyu', 'hixyu', 'hilyu'], 
+  'ひょ': ['hyo', 'hixyo', 'hilyo'],
+  // みゃ行
+  'みゃ': ['mya', 'mixya', 'milya'], 
+  'みゅ': ['myu', 'mixyu', 'milyu'], 
+  'みょ': ['myo', 'mixyo', 'milyo'],
+  // りゃ行
+  'りゃ': ['rya', 'rixya', 'rilya'], 
+  'りゅ': ['ryu', 'rixyu', 'rilyu'], 
+  'りょ': ['ryo', 'rixyo', 'rilyu'],
+  // ぎゃ行
+  'ぎゃ': ['gya', 'gixya', 'gilya'], 
+  'ぎゅ': ['gyu', 'gixyu', 'gilyu'], 
+  'ぎょ': ['gyo', 'gixyo', 'gilyo'],
+  // じゃ行
+  'じゃ': ['ja', 'jya', 'zya', 'jixya', 'jilya', 'zixya', 'zilya'], 
+  'じゅ': ['ju', 'jyu', 'zyu', 'jixyu', 'jilyu', 'zixyu', 'zilyu'], 
+  'じょ': ['jo', 'jyo', 'zyo', 'jixyo', 'jilyo', 'zixyo', 'zilyo'],
+  // びゃ行
+  'びゃ': ['bya', 'bixya', 'bilya'], 
+  'びゅ': ['byu', 'bixyu', 'bilyu'], 
+  'びょ': ['byo', 'bixyo', 'bilyo'],
+  // ぴゃ行
+  'ぴゃ': ['pya', 'pixya', 'pilya'], 
+  'ぴゅ': ['pyu', 'pixyu', 'pilyu'], 
+  'ぴょ': ['pyo', 'pixyo', 'pilyo'],
+  
+  // ふぁ行 (ユーザー要望の huxi 等を含む)
+  'ふぁ': ['fa', 'fwa', 'fuxa', 'fula', 'huxa', 'hula'], 
+  'ふぃ': ['fi', 'fyi', 'fuxi', 'fuli', 'huxi', 'huli'], 
+  'ふぇ': ['fe', 'fye', 'fuxe', 'fule', 'huxe', 'hule'], 
+  'ふぉ': ['fo', 'fwo', 'fuxo', 'fulo', 'huxo', 'hulo'],
+  
+  // ゔ行
+  'ゔ': ['vu'], 'う゛': ['vu'],
+  'ゔぁ': ['va', 'vuxa', 'vula'], 
+  'ゔぃ': ['vi', 'vuxi', 'vuli'], 
+  'ゔぇ': ['ve', 'vuxe', 'vule'], 
+  'ゔぉ': ['vo', 'vuxo', 'vulo'],
+  
+  // てぃ・でぃ・とぅ・どぅ
+  'てぃ': ['thi', 'tei', 'texi', 'teli'], 
+  'でぃ': ['dhi', 'dei', 'dexi', 'deli'],
+  'とぅ': ['twu', 'toxu', 'tolu'],
+  'どぅ': ['dwu', 'doxu', 'dolu'],
+
+  // うぃ・うぇ・うぉ
+  'うぃ': ['wi', 'whi', 'uxi', 'uli'], 
+  'うぇ': ['we', 'whe', 'uxe', 'ule'], 
+  'うぉ': ['who', 'uxo', 'ulo'], 
+  
+  // くぁ行
+  'くぁ': ['qa', 'kwa', 'kuxa', 'kula'], 
+  'くぃ': ['qi', 'kwi', 'kuxi', 'kuli'], 
+  'くぇ': ['qe', 'kwe', 'kuxe', 'kule'], 
+  'くぉ': ['qo', 'kwo', 'kuxo', 'kulo'],
+  
+  // つぁ行
+  'つぁ': ['tsa', 'tsuxa', 'tsula'], 
+  'つぃ': ['tsi', 'tsuxi', 'tsuli'], 
+  'つぇ': ['tse', 'tsuxe', 'tsule'], 
+  'つぉ': ['tso', 'tsuxo', 'tsulo'],
+  
+  // しぇ・じぇ・ちぇ
+  'しぇ': ['she', 'sye', 'shixe', 'shile', 'sixe', 'sile'],
+  'じぇ': ['je', 'jye', 'jixe', 'jile', 'zixe', 'zile'],
+  'ちぇ': ['che', 'tye', 'chixe', 'chile', 'tixe', 'tile']
+};
+
+const INITIAL_WORDS = [
+  // --- 街・交通・施設 (Town & Transport) ---
+  { text: "信号", kana: "しんごう" },
+  { text: "信号機", kana: "しんごうき" },
+  { text: "横断歩道", kana: "おうだんほどう" },
+  { text: "交差点", kana: "こうさてん" },
+  { text: "歩道橋", kana: "ほどうきょう" },
+  { text: "自転車", kana: "じてんしゃ" },
+  { text: "自動車", kana: "じどうしゃ" },
+  { text: "駐車場", kana: "ちゅうしゃじょう" },
+  { text: "駐輪場", kana: "ちゅうりんじょう" },
+  { text: "郵便局", kana: "ゆうびんきょく" },
+  { text: "警察署", kana: "けいさつしょ" },
+  { text: "消防署", kana: "しょうぼうしょ" },
+  { text: "救急車", kana: "きゅうきゅうしゃ" },
+  { text: "消防車", kana: "しょうぼうしゃ" },
+  { text: "パトカー", kana: "ぱとかー" },
+  { text: "新幹線", kana: "しんかんせん" },
+  { text: "飛行機", kana: "ひこうき" },
+  { text: "地下鉄", kana: "ちかてつ" },
+  { text: "定期券", kana: "ていきけん" },
+  { text: "回数券", kana: "かいすうけん" },
+  { text: "改札口", kana: "かいさつぐち" },
+  { text: "券売機", kana: "けんばいき" },
+  { text: "待合室", kana: "まちあいしつ" },
+  { text: "停留所", kana: "ていりゅうじょ" },
+  { text: "時刻表", kana: "じこくひょう" },
+  { text: "始発列車", kana: "しはつれっしゃ" },
+  { text: "終電", kana: "しゅうでん" },
+  { text: "満員電車", kana: "まんいんでんしゃ" },
+  { text: "優先席", kana: "ゆうせんせき" },
+  { text: "運転免許証", kana: "うんてんめんきょしょう" },
+  { text: "図書館", kana: "としょかん" },
+  { text: "水族館", kana: "すいぞくかん" },
+  { text: "博物館", kana: "はくぶつかん" },
+  { text: "美術館", kana: "びじゅつかん" },
+  { text: "映画館", kana: "えいがかん" },
+  { text: "遊園地", kana: "ゆうえんち" },
+  { text: "動物園", kana: "どうぶつえん" },
+  { text: "植物園", kana: "しょくぶつえん" },
+  { text: "市役所", kana: "しやくしょ" },
+  { text: "銀行", kana: "ぎんこう" },
+  { text: "病院", kana: "びょういん" },
+  { text: "薬局", kana: "やっきょく" },
+  { text: "美容院", kana: "びよういん" },
+  { text: "理髪店", kana: "りはつてん" },
+  { text: "コンビニ", kana: "こんびに" },
+  { text: "スーパー", kana: "すーぱー" },
+  { text: "商店街", kana: "しょうてんがい" },
+  { text: "百貨店", kana: "ひゃっかてん" },
+  { text: "自動販売機", kana: "じどうはんばいき" },
+  { text: "公衆電話", kana: "こうしゅうでんわ" },
+  { text: "電信柱", kana: "でんしんばしら" },
+  { text: "掲示板", kana: "けいじばん" },
+  { text: "案内所", kana: "あんないじょ" },
+  { text: "非常口", kana: "ひじょうぐち" },
+  { text: "消火器", kana: "しょうかき" },
+  
+  // --- 学校・教育 (School) ---
+  { text: "小学校", kana: "しょうがっこう" },
+  { text: "中学校", kana: "ちゅうがっこう" },
+  { text: "高等学校", kana: "こうとうがっこう" },
+  { text: "大学院", kana: "だいがくいん" },
+  { text: "専門学校", kana: "せんもんがっこう" },
+  { text: "幼稚園", kana: "ようちえん" },
+  { text: "保育園", kana: "ほいくえん" },
+  { text: "入学式", kana: "にゅうがくしき" },
+  { text: "卒業式", kana: "そつぎょうしき" },
+  { text: "始業式", kana: "しぎょうしき" },
+  { text: "終業式", kana: "しゅうぎょうしき" },
+  { text: "運動会", kana: "うんどうかい" },
+  { text: "体育祭", kana: "たいいくさい" },
+  { text: "文化祭", kana: "ぶんかさい" },
+  { text: "修学旅行", kana: "しゅうがくりょこう" },
+  { text: "遠足", kana: "えんそく" },
+  { text: "夏休み", kana: "なつやすみ" },
+  { text: "冬休み", kana: "ふゆやすみ" },
+  { text: "春休み", kana: "はるやすみ" },
+  { text: "通知表", kana: "つうちひょう" },
+  { text: "成績表", kana: "せいせきひょう" },
+  { text: "時間割", kana: "じかんわり" },
+  { text: "教科書", kana: "きょうかしょ" },
+  { text: "参考書", kana: "さんこうしょ" },
+  { text: "問題集", kana: "もんだいしゅう" },
+  { text: "単語帳", kana: "たんごちょう" },
+  { text: "筆記用具", kana: "ひっきようぐ" },
+  { text: "鉛筆削り", kana: "えんぴつけずり" },
+  { text: "消しゴム", kana: "けしごむ" },
+  { text: "黒板消し", kana: "こくばんけし" },
+  { text: "定規", kana: "じょうぎ" },
+  { text: "分度器", kana: "ぶんどき" },
+  { text: "給食当番", kana: "きゅうしょくとうばん" },
+  { text: "掃除当番", kana: "そうじとうばん" },
+  { text: "日直", kana: "にっちょく" },
+  { text: "委員会", kana: "いいんかい" },
+  { text: "生徒会", kana: "せいとかい" },
+  { text: "部活動", kana: "ぶかつどう" },
+  { text: "職員室", kana: "しょくいんしつ" },
+  { text: "保健室", kana: "ほけんしつ" },
+  { text: "図書室", kana: "としょしつ" },
+  { text: "音楽室", kana: "おんがくしつ" },
+  { text: "理科室", kana: "りかしつ" },
+  { text: "家庭科", kana: "かていか" },
+  { text: "算数", kana: "さんすう" },
+  { text: "数学", kana: "すうがく" },
+  { text: "社会科", kana: "しゃかいか" },
+  { text: "歴史", kana: "れきし" },
+  { text: "地理", kana: "ちり" },
+  { text: "公民", kana: "こうみん" },
+  { text: "物理", kana: "ぶつり" },
+  { text: "化学", kana: "かがく" },
+  { text: "生物", kana: "せいぶつ" },
+  { text: "地学", kana: "ちがく" },
+  { text: "美術", kana: "びじゅつ" },
+  { text: "技術", kana: "ぎじゅつ" },
+
+  // --- 家庭・生活・道具 (Home & Life) ---
+  { text: "冷蔵庫", kana: "れいぞうこ" },
+  { text: "洗濯機", kana: "せんたくき" },
+  { text: "掃除機", kana: "そうじき" },
+  { text: "炊飯器", kana: "すいはんき" },
+  { text: "電子レンジ", kana: "でんしれんじ" },
+  { text: "扇風機", kana: "せんぷうき" },
+  { text: "換気扇", kana: "かんきせん" },
+  { text: "空気清浄機", kana: "くうきせいじょうき" },
+  { text: "加湿器", kana: "かしつき" },
+  { text: "除湿機", kana: "じょしつき" },
+  { text: "暖房器具", kana: "だんぼうきぐ" },
+  { text: "給湯器", kana: "きゅうとうき" },
+  { text: "食器洗い機", kana: "しょっきあらいき" },
+  { text: "乾燥機", kana: "かんそうき" },
+  { text: "延長コード", kana: "えんちょうこーど" },
+  { text: "充電器", kana: "じゅうでんき" },
+  { text: "乾電池", kana: "かんでんち" },
+  { text: "懐中電灯", kana: "かいちゅうでんとう" },
+  { text: "爪切り", kana: "つめきり" },
+  { text: "耳かき", kana: "みみかき" },
+  { text: "体温計", kana: "たいおんけい" },
+  { text: "絆創膏", kana: "ばんそうこう" },
+  { text: "湿布薬", kana: "しっぷやく" },
+  { text: "目薬", kana: "めぐすり" },
+  { text: "歯ブラシ", kana: "はぶらし" },
+  { text: "歯磨き粉", kana: "はみがきこ" },
+  { text: "洗面所", kana: "せんめんじょ" },
+  { text: "お風呂場", kana: "おふろば" },
+  { text: "脱衣所", kana: "だついじょ" },
+  { text: "寝室", kana: "しんしつ" },
+  { text: "居間", kana: "いま" },
+  { text: "台所", kana: "だいどころ" },
+  { text: "玄関", kana: "げんかん" },
+  { text: "郵便受け", kana: "ゆうびんうけ" },
+  { text: "宅配便", kana: "たくはいびん" },
+  { text: "再配達", kana: "さいはいたつ" },
+  { text: "不在票", kana: "ふざいひょう" },
+  { text: "請求書", kana: "せいきゅうしょ" },
+  { text: "領収書", kana: "りょうしゅうしょ" },
+  { text: "取扱説明書", kana: "とりあつかいせつめいしょ" },
+  { text: "保証書", kana: "ほしょうしょ" },
+  { text: "印鑑証明", kana: "いんかんしょうめい" },
+  { text: "住民票", kana: "じゅうみんひょう" },
+  { text: "戸籍謄本", kana: "こせきとうほん" },
+  { text: "年金手帳", kana: "ねんきんてちょう" },
+  { text: "保険証", kana: "ほけんしょう" },
+  { text: "診察券", kana: "しんさつけん" },
+  { text: "会員証", kana: "かいいんしょう" },
+  { text: "ポイントカード", kana: "ぽいんとかーど" },
+  { text: "クレジットカード", kana: "くれじっとかーど" },
+  { text: "通帳", kana: "つうちょう" },
+
+  // --- 自然・気象・宇宙 (Nature & Weather) ---
+  { text: "天気予報", kana: "てんきよほう" },
+  { text: "降水確率", kana: "こうすいかくりつ" },
+  { text: "最高気温", kana: "さいこうきおん" },
+  { text: "最低気温", kana: "さいていきおん" },
+  { text: "湿度", kana: "しつど" },
+  { text: "気圧", kana: "きあつ" },
+  { text: "高気圧", kana: "こうきあつ" },
+  { text: "低気圧", kana: "ていきあつ" },
+  { text: "台風", kana: "たいふう" },
+  { text: "熱帯低気圧", kana: "ねったいていきあつ" },
+  { text: "集中豪雨", kana: "しゅうちゅうごうう" },
+  { text: "ゲリラ豪雨", kana: "げりらごうう" },
+  { text: "土砂降り", kana: "どしゃぶり" },
+  { text: "梅雨前線", kana: "ばいうぜんせん" },
+  { text: "秋雨前線", kana: "あきさめぜんせん" },
+  { text: "異常気象", kana: "いじょうきしょう" },
+  { text: "地球温暖化", kana: "ちきゅうおんだんか" },
+  { text: "温室効果ガス", kana: "おんしつこうかがす" },
+  { text: "二酸化炭素", kana: "にさんかたんそ" },
+  { text: "酸素", kana: "さんそ" },
+  { text: "水素", kana: "すいそ" },
+  { text: "窒素", kana: "ちっそ" },
+  { text: "オゾン層", kana: "おぞんそう" },
+  { text: "紫外線", kana: "しがいせん" },
+  { text: "赤外線", kana: "せきがいせん" },
+  { text: "放射能", kana: "ほうしゃのう" },
+  { text: "太陽系", kana: "たいようけい" },
+  { text: "水金地火木土天海", kana: "すいきんちかもくどってんかい" },
+  { text: "小惑星", kana: "しょうわくせい" },
+  { text: "彗星", kana: "すいせい" },
+  { text: "流星群", kana: "りゅうせいぐん" },
+  { text: "天の川", kana: "あまのがわ" },
+  { text: "ブラックホール", kana: "ぶらっくほーる" },
+  { text: "超新星爆発", kana: "ちょうしんせいばくはつ" },
+  { text: "宇宙飛行士", kana: "うちゅうひこうし" },
+  { text: "国際宇宙ステーション", kana: "こくさいうちゅうすてーしょん" },
+  { text: "人工衛星", kana: "じんこうえいせい" },
+  { text: "太平洋", kana: "たいへいよう" },
+  { text: "大西洋", kana: "たいせいよう" },
+  { text: "インド洋", kana: "いんどよう" },
+  { text: "北極海", kana: "ほっきょくかい" },
+  { text: "南極大陸", kana: "なんきょくたいりく" },
+  { text: "エベレスト", kana: "えべれすと" },
+  { text: "富士山", kana: "ふじさん" },
+  { text: "活火山", kana: "かつかざん" },
+  { text: "休火山", kana: "きゅうかざん" },
+  { text: "震度", kana: "しんど" },
+  { text: "マグニチュード", kana: "まぐにちゅーど" },
+  { text: "津波", kana: "つなみ" },
+  { text: "避難所", kana: "ひなんじょ" },
+
+  // --- 体・健康・医療 (Body & Health) ---
+  { text: "健康診断", kana: "けんこうしんだん" },
+  { text: "予防接種", kana: "よぼうせっしゅ" },
+  { text: "内科検診", kana: "ないかけんしん" },
+  { text: "歯科検診", kana: "しかけんしん" },
+  { text: "視力検査", kana: "しりょくけんさ" },
+  { text: "聴力検査", kana: "ちょうりょくけんさ" },
+  { text: "血液検査", kana: "けつえきけんさ" },
+  { text: "レントゲン", kana: "れんとげん" },
+  { text: "心電図", kana: "しんでんず" },
+  { text: "処方箋", kana: "しょほうせん" },
+  { text: "抗生物質", kana: "こうせいぶっしつ" },
+  { text: "鎮痛剤", kana: "ちんつうざい" },
+  { text: "解熱剤", kana: "げねつざい" },
+  { text: "胃腸薬", kana: "いちょうやく" },
+  { text: "目薬", kana: "めぐすり" },
+  { text: "副作用", kana: "ふくさよう" },
+  { text: "後遺症", kana: "こういしょう" },
+  { text: "筋肉痛", kana: "きんにくつう" },
+  { text: "骨折", kana: "こっせつ" },
+  { text: "捻挫", kana: "ねんざ" },
+  { text: "打撲", kana: "だぼく" },
+  { text: "脱臼", kana: "だっきゅう" },
+  { text: "擦り傷", kana: "すりきず" },
+  { text: "切り傷", kana: "きりきず" },
+  { text: "火傷", kana: "やけど" },
+  { text: "花粉症", kana: "かふんしょう" },
+  { text: "熱中症", kana: "ねっちゅうしょう" },
+  { text: "脱水症状", kana: "だっすいしょうじょう" },
+  { text: "インフルエンザ", kana: "いんふるえんざ" },
+  { text: "ウイルス", kana: "ういるす" },
+  { text: "細菌", kana: "さいきん" },
+  { text: "免疫力", kana: "めんえきりょく" },
+  { text: "新陳代謝", kana: "しんちんたいしゃ" },
+  { text: "有酸素運動", kana: "ゆうさんそうんどう" },
+  { text: "筋力トレーニング", kana: "きんりょくとれーにんぐ" },
+  { text: "ストレッチ", kana: "すとれっち" },
+  { text: "深呼吸", kana: "しんこきゅう" },
+  { text: "睡眠不足", kana: "すいみんぶそく" },
+  { text: "栄養バランス", kana: "えいようばらんす" },
+  { text: "炭水化物", kana: "たんすいかぶつ" },
+  { text: "タンパク質", kana: "たんぱくしつ" },
+  { text: "脂質", kana: "ししつ" },
+  { text: "食物繊維", kana: "しょくもつせんい" },
+  { text: "膠原病", kana: "こうげんびょう" },
+  { text: "糖尿病", kana: "とうにょうびょう" },
+  { text: "高血圧", kana: "こうけつあつ" },
+
+  // --- 感情・形容・表現 (Emotion & Expression) ---
+  { text: "一生懸命", kana: "いっしょうけんめい" },
+  { text: "誠心誠意", kana: "せいしんせいい" },
+  { text: "無我夢中", kana: "むがむちゅう" },
+  { text: "興味津々", kana: "きょうみしんしん" },
+  { text: "支離滅裂", kana: "しりめつれつ" },
+  { text: "優柔不断", kana: "ゆうじゅうふだん" },
+  { text: "有言実行", kana: "ゆうげんじっこう" },
+  { text: "不言実行", kana: "ふげんじっこう" },
+  { text: "臨機応変", kana: "りんきおうへん" },
+  { text: "自画自賛", kana: "じがじさん" },
+  { text: "油断大敵", kana: "ゆだんたいてき" },
+  { text: "一石二鳥", kana: "いっせきにちょう" },
+  { text: "一長一短", kana: "いっちょういったん" },
+  { text: "試行錯誤", kana: "しこうさくご" },
+  { text: "自業自得", kana: "じごうじとく" },
+  { text: "以心伝心", kana: "いしんでんしん" },
+  { text: "波乱万丈", kana: "はらんばんじょう" },
+  { text: "喜怒哀楽", kana: "きどあいらく" },
+  { text: "整理整頓", kana: "せいりせいとん" },
+  { text: "質実剛健", kana: "しつじつごうけん" },
+  { text: "温故知新", kana: "おんこちしん" },
+  { text: "切磋琢磨", kana: "せっさたくま" },
+  { text: "粉骨砕身", kana: "ふんこつさいしん" },
+  { text: "日進月歩", kana: "にっしんげっぽ" },
+  { text: "千載一遇", kana: "せんざいいちぐう" },
+  { text: "起死回生", kana: "きしかいせい" },
+  { text: "意気投合", kana: "いきとうごう" },
+  { text: "唯我独尊", kana: "ゆいがどくそん" },
+  { text: "四面楚歌", kana: "しめんそか" },
+  { text: "五里霧中", kana: "ごりむちゅう" },
+  { text: "半信半疑", kana: "はんしんはんぎ" },
+  { text: "自暴自棄", kana: "じぼうじき" },
+  { text: "前代未聞", kana: "ぜんだいみもん" },
+  { text: "絶体絶命", kana: "ぜったいぜつめい" },
+  { text: "危機一髪", kana: "ききいっぱつ" },
+  { text: "創意工夫", kana: "そういくふう" },
+  { text: "適材適所", kana: "てきざいてきしょ" },
+  { text: "老若男女", kana: "ろうにゃくなんにょ" },
+  { text: "東西南北", kana: "とうざいなんぼく" },
+  { text: "春夏秋冬", kana: "しゅんかしゅうとう" },
+  { text: "花鳥風月", kana: "かちょうふうげつ" },
+  { text: "焼肉定食", kana: "やきにくていしょく" },
+  { text: "大盛無料", kana: "おおもりむりょう" },
+  { text: "期間限定", kana: "きかんげんてい" },
+  { text: "数量限定", kana: "すうりょうげんてい" },
+  { text: "本日休業", kana: "ほんじつきゅうぎょう" },
+  { text: "準備中", kana: "じゅんびちゅう" },
+  { text: "営業中", kana: "えいぎょうちゅう" },
+
+  // --- カタカナ語・その他 (Katakana & Misc) ---
+  { text: "インターネット", kana: "いんたーねっと" },
+  { text: "コミュニケーション", kana: "こみゅにけーしょん" },
+  { text: "シミュレーション", kana: "しみゅれーしょん" },
+  { text: "イノベーション", kana: "いのべーしょん" },
+  { text: "モチベーション", kana: "もちべーしょん" },
+  { text: "プレゼンテーション", kana: "ぷれぜんてーしょん" },
+  { text: "ディスカッション", kana: "でぃすかっしょん" },
+  { text: "ブレインストーミング", kana: "ぶれいんすとーみんぐ" },
+  { text: "コンプライアンス", kana: "こんぷらいあんす" },
+  { text: "サステナビリティ", kana: "さすてなびりてぃ" },
+  { text: "ダイバーシティ", kana: "だいばーしてぃ" },
+  { text: "グローバル", kana: "ぐろーばる" },
+  { text: "スタンダード", kana: "すたんだーど" },
+  { text: "パフォーマンス", kana: "ぱふぉーまんす" },
+  { text: "コストパフォーマンス", kana: "こすとぱふぉーまんす" },
+  { text: "タイムパフォーマンス", kana: "たいむぱふぉーまんす" },
+  { text: "コンビニエンスストア", kana: "こんびにえんすすとあ" },
+  { text: "スーパーマーケット", kana: "すーぱーまーけっと" },
+  { text: "ショッピングモール", kana: "しょっぴんぐもーる" },
+  { text: "テーマパーク", kana: "てーまぱーく" },
+  { text: "アミューズメント", kana: "あみゅーずめんと" },
+  { text: "エスカレーター", kana: "えすかれーたー" },
+  { text: "エレベーター", kana: "えれべーたー" },
+  { text: "コインランドリー", kana: "こいんらんどりー" },
+  { text: "クリーニング", kana: "くりーにんぐ" },
+  { text: "リサイクルショップ", kana: "りさいくるしょっぷ" },
+  { text: "フリーマーケット", kana: "ふりーまーけっと" },
+  { text: "ボランティア", kana: "ぼらんてぃあ" },
+  { text: "リノベーション", kana: "りのべーしょん" },
+  { text: "コンチェルト", kana: "こんちぇると" },
+  { text: "クァルテット", kana: "くぁるてっと" },
+  { text: "ウィザード", kana: "うぃざーど" },
+  { text: "ヴォルケーノ", kana: "ゔぉるけーの" },
+
+  // --- 追加: 長音強化 (Long Vowels) ---
+  { text: "スーパーカー", kana: "すーぱーかー" },
+  { text: "ハンバーガー", kana: "はんばーがー" },
+  { text: "コンピューター", kana: "こんぴゅーたー" },
+  { text: "パスポート", kana: "ぱすぽーと" },
+  { text: "カレンダー", kana: "かれんだー" },
+  { text: "エネルギー", kana: "えねるぎー" },
+  { text: "タクシー", kana: "たくしー" },
+  { text: "リポーター", kana: "りぽーたー" },
+  { text: "マフラー", kana: "まふらー" },
+  { text: "セーター", kana: "せーたー" },
+  { text: "スニーカー", kana: "すにーかー" },
+  { text: "ストーブ", kana: "すとーぶ" },
+
+  // --- 追加: P音強化 (P Sounds) ---
+  { text: "ピアノ", kana: "ぴあの" },
+  { text: "プレゼント", kana: "ぷれぜんと" },
+  { text: "プロテイン", kana: "ぷろていん" },
+  { text: "ピンク", kana: "ぴんく" },
+  { text: "プラスチック", kana: "ぷらすちっく" },
+  { text: "プラネタリウム", kana: "ぷらねたりうむ" },
+  { text: "パラダイス", kana: "ぱらだいす" },
+  { text: "ピクニック", kana: "ぴくにっく" },
+  { text: "パイロット", kana: "ぱいろっと" },
+  { text: "ポケット", kana: "ぽけっと" },
+  { text: "ページ", kana: "ぺーじ" },
+  { text: "プロペラ", kana: "ぷろぺら" },
+  { text: "ペガサス", kana: "ぺがさす" }
+];
+
+// --- 法律用語リスト (Legal Terms) ---
+const LEGAL_WORDS = [
+  // --- 民法 (Civil Law) ---
+  { text: "善意", kana: "ぜんい" },
+  { text: "悪意", kana: "あくい" },
+  { text: "過失", kana: "かしつ" },
+  { text: "重過失", kana: "じゅうかしつ" },
+  { text: "故意", kana: "こい" },
+  { text: "錯誤", kana: "さくご" },
+  { text: "詐欺", kana: "さぎ" },
+  { text: "強迫", kana: "きょうはく" },
+  { text: "心裡留保", kana: "しんりりゅうほ" },
+  { text: "虚偽表示", kana: "きょぎひょうじ" },
+  { text: "無権代理", kana: "むけんだいり" },
+  { text: "表見代理", kana: "ひょうけんだいり" },
+  { text: "時効", kana: "じこう" },
+  { text: "取得時効", kana: "しゅとくじこう" },
+  { text: "消滅時効", kana: "しょうめつじこう" },
+  { text: "物権", kana: "ぶっけん" },
+  { text: "債権", kana: "さいけん" },
+  { text: "所有権", kana: "しょゆうけん" },
+  { text: "占有権", kana: "せんゆうけん" },
+  { text: "即時取得", kana: "そくじしゅとく" },
+  { text: "地上権", kana: "ちじょうけん" },
+  { text: "永小作権", kana: "えいこさくけん" },
+  { text: "地役権", kana: "ちえきけん" },
+  { text: "留置権", kana: "りゅうちけん" },
+  { text: "先取特権", kana: "さきどりとっけん" },
+  { text: "質権", kana: "しちけん" },
+  { text: "抵当権", kana: "ていとうけん" },
+  { text: "根抵当権", kana: "ねていとうけん" },
+  { text: "債務不履行", kana: "さいむふりこう" },
+  { text: "履行遅滞", kana: "りこうちたい" },
+  { text: "履行不能", kana: "りこうふのう" },
+  { text: "損害賠償", kana: "そんがいばいしょう" },
+  { text: "解除", kana: "かいじょ" },
+  { text: "連帯債務", kana: "れんたいさいむ" },
+  { text: "保証債務", kana: "ほしょうさいむ" },
+  { text: "債権譲渡", kana: "さいけんじょうと" },
+  { text: "弁済", kana: "べんさい" },
+  { text: "代物弁済", kana: "だいぶつべんさい" },
+  { text: "相殺", kana: "そうさい" },
+  { text: "更改", kana: "こうかい" },
+  { text: "免除", kana: "めんじょ" },
+  { text: "混同", kana: "こんどう" },
+  { text: "契約", kana: "けいやく" },
+  { text: "贈与", kana: "ぞうよ" },
+  { text: "売買", kana: "ばいばい" },
+  { text: "交換", kana: "こうかん" },
+  { text: "消費貸借", kana: "しょうひたいしゃく" },
+  { text: "使用貸借", kana: "しようたいしゃく" },
+  { text: "賃貸借", kana: "ちんたいしゃく" },
+  { text: "雇用", kana: "こよう" },
+  { text: "請負", kana: "うけおい" },
+  { text: "委任", kana: "いにん" },
+  { text: "寄託", kana: "きたく" },
+  { text: "組合", kana: "くみあい" },
+  { text: "和解", kana: "わかい" },
+  { text: "事務管理", kana: "じむかんり" },
+  { text: "不当利得", kana: "ふとうりとく" },
+  { text: "不法行為", kana: "ふほうこうい" },
+  { text: "親族", kana: "しんぞく" },
+  { text: "婚姻", kana: "こんいん" },
+  { text: "離婚", kana: "りこん" },
+  { text: "親権", kana: "しんけん" },
+  { text: "成年後見", kana: "せいねんこうけん" },
+  { text: "扶養", kana: "ふよう" },
+  { text: "相続", kana: "そうぞく" },
+  { text: "遺言", kana: "いごん" },
+  { text: "遺留分", kana: "いりゅうぶん" },
+  { text: "登記", kana: "とうき" },
+  { text: "対抗要件", kana: "たいこうようけん" },
+  { text: "権利能力", kana: "けんりのうりょく" },
+  { text: "意思能力", kana: "いしのうりょく" },
+  { text: "行為能力", kana: "こういのうりょく" },
+
+  // --- 刑法 (Criminal Law) ---
+  { text: "罪刑法定主義", kana: "ざいけいほうていしゅぎ" },
+  { text: "構成要件", kana: "こうせいようけん" },
+  { text: "違法性", kana: "いほうせい" },
+  { text: "責任", kana: "せきにん" },
+  { text: "作為", kana: "さくい" },
+  { text: "不作為", kana: "ふさくい" },
+  { text: "因果関係", kana: "いんがかんけい" },
+  { text: "正当防衛", kana: "せいとうぼうえい" },
+  { text: "緊急避難", kana: "きんきゅうひなん" },
+  { text: "責任能力", kana: "せきにんのうりょく" },
+  { text: "心神喪失", kana: "しんしんそうしつ" },
+  { text: "心神耗弱", kana: "しんしんこうじゃく" },
+  { text: "未遂", kana: "みすい" },
+  { text: "不能犯", kana: "ふのうはん" },
+  { text: "中止犯", kana: "ちゅうしはん" },
+  { text: "予備", kana: "よび" },
+  { text: "共犯", kana: "きょうはん" },
+  { text: "共同正犯", kana: "きょうどうせいはん" },
+  { text: "教唆犯", kana: "きょうさはん" },
+  { text: "幇助犯", kana: "ほうじょはん" },
+  { text: "間接正犯", kana: "かんせつせいはん" },
+  { text: "併合罪", kana: "へいごうざい" },
+  { text: "執行猶予", kana: "しっこうゆうよ" },
+  { text: "仮釈放", kana: "かりしゃくほう" },
+  { text: "時効", kana: "じこう" },
+  { text: "殺人", kana: "さつじん" },
+  { text: "傷害", kana: "しょうがい" },
+  { text: "暴行", kana: "ぼうこう" },
+  { text: "脅迫", kana: "きょうはく" },
+  { text: "監禁", kana: "かんきん" },
+  { text: "誘拐", kana: "ゆうかい" },
+  { text: "名誉毀損", kana: "めいよきそん" },
+  { text: "信用毀損", kana: "しんようきそん" },
+  { text: "業務妨害", kana: "ぎょうむぼうがい" },
+  { text: "窃盗", kana: "せっとう" },
+  { text: "強盗", kana: "ごうとう" },
+  { text: "横領", kana: "おうりょう" },
+  { text: "背任", kana: "はいにん" },
+  { text: "恐喝", kana: "きょうかつ" },
+  { text: "放火", kana: "ほうか" },
+  { text: "偽造", kana: "ぎぞう" },
+  { text: "賭博", kana: "とばく" },
+  { text: "贈収賄", kana: "ぞうしゅうわい" },
+  { text: "公務執行妨害", kana: "こうむしっこうぼうがい" },
+
+  // --- 憲法 (Constitution) ---
+  { text: "国民主権", kana: "こくみんしゅけん" },
+  { text: "基本的人権", kana: "きほんてきじんけん" },
+  { text: "平和主義", kana: "へいわしゅぎ" },
+  { text: "法の下の平等", kana: "ほうのもとのびょうどう" },
+  { text: "思想良心の自由", kana: "しそうりょうしんのじゆう" },
+  { text: "信教の自由", kana: "しんきょうのじゆう" },
+  { text: "政教分離", kana: "せいきょうぶんり" },
+  { text: "表現の自由", kana: "ひょうげんのじゆう" },
+  { text: "検閲", kana: "けんえつ" },
+  { text: "通信の秘密", kana: "つうしんのひみつ" },
+  { text: "学問の自由", kana: "がくもんのじゆう" },
+  { text: "生存権", kana: "せいぞんけん" },
+  { text: "教育を受ける権利", kana: "きょういくをうけるけんり" },
+  { text: "勤労の権利", kana: "きんろうのけんり" },
+  { text: "労働三権", kana: "ろうどうさんけん" },
+  { text: "適正手続", kana: "てきせいてつづき" },
+  { text: "冤罪", kana: "えんざい" },
+  { text: "国会", kana: "こっかい" },
+  { text: "内閣", kana: "ないかく" },
+  { text: "裁判所", kana: "さいばんしょ" },
+  { text: "違憲審査権", kana: "いけんしんさけん" },
+  { text: "地方自治", kana: "ちほうじち" },
+  { text: "象徴天皇制", kana: "しょうちょうてんのうせい" },
+  { text: "憲法改正", kana: "けんぽうかいせい" },
+  { text: "国民投票", kana: "こくみんとうひょう" },
+
+  // --- 訴訟法 (Procedural Law) ---
+  { text: "民事訴訟", kana: "みんじそしょう" },
+  { text: "刑事訴訟", kana: "けいじそしょう" },
+  { text: "管轄", kana: "かんかつ" },
+  { text: "当事者", kana: "とうじしゃ" },
+  { text: "原告", kana: "げんこく" },
+  { text: "被告", kana: "ひこく" },
+  { text: "訴えの利益", kana: "うったえのりえき" },
+  { text: "口頭弁論", kana: "こうとうべんろん" },
+  { text: "証拠", kana: "しょうこ" },
+  { text: "証明責任", kana: "しょうめいせきにん" },
+  { text: "自由心証主義", kana: "じゆうしんしょうしゅぎ" },
+  { text: "弁論主義", kana: "べんろんしゅぎ" },
+  { text: "処分権主義", kana: "しょぶんけんしゅぎ" },
+  { text: "判決", kana: "はんけつ" },
+  { text: "既判力", kana: "きはんりょく" },
+  { text: "控訴", kana: "こうそ" },
+  { text: "上告", kana: "じょうこく" },
+  { text: "再審", kana: "さいしん" },
+  { text: "強制執行", kana: "きょうせいしっこう" },
+  { text: "保全処分", kana: "ほぜんしょぶん" },
+  { text: "仮差押え", kana: "かりさしおさえ" },
+  { text: "仮処分", kana: "かりしょぶん" },
+  { text: "被疑者", kana: "ひぎしゃ" },
+  { text: "被告人", kana: "ひこくにん" },
+  { text: "令状", kana: "れいじょう" },
+  { text: "逮捕", kana: "たいほ" },
+  { text: "勾留", kana: "こうりゅう" },
+  { text: "保釈", kana: "ほしゃく" },
+  { text: "公判", kana: "こうはん" },
+  { text: "起訴", kana: "きそ" },
+  { text: "不起訴", kana: "ふきそ" },
+  { text: "自白", kana: "じはく" },
+  { text: "黙秘権", kana: "もくひけん" },
+  { text: "推定無罪", kana: "すいていむざい" },
+  { text: "証人尋問", kana: "しょうにんじんもん" },
+
+  // --- 商法・会社法 (Commercial/Company Law) ---
+  { text: "商人", kana: "しょうにん" },
+  { text: "商行為", kana: "しょうこうい" },
+  { text: "株式会社", kana: "かぶしきがいしゃ" },
+  { text: "発起人", kana: "ほっきにん" },
+  { text: "定款", kana: "ていかん" },
+  { text: "株式", kana: "かぶしき" },
+  { text: "株主総会", kana: "かぶぬしそうかい" },
+  { text: "取締役", kana: "とりしまりやく" },
+  { text: "監査役", kana: "かんさやく" },
+  { text: "代表取締役", kana: "だいひょうとりしまりやく" },
+  { text: "善管注意義務", kana: "ぜんかんちゅういぎむ" },
+  { text: "忠実義務", kana: "ちゅうじつぎむ" },
+  { text: "株主代表訴訟", kana: "かぶぬしだいひょうそしょう" },
+  { text: "新株予約権", kana: "しんかぶよやくけん" },
+  { text: "社債", kana: "しゃさい" },
+  { text: "合併", kana: "がっぺい" },
+  { text: "会社分割", kana: "かいしゃぶんかつ" },
+  { text: "事業譲渡", kana: "じぎょうじょうと" },
+  { text: "手形", kana: "てがた" },
+  { text: "小切手", kana: "こぎって" },
+  { text: "裏書", kana: "うらがき" },
+
+  // --- その他・法学一般 (General Legal) ---
+  { text: "六法全書", kana: "ろっぽうぜんしょ" },
+  { text: "判例", kana: "はんれい" },
+  { text: "裁判官", kana: "さいばんかん" },
+  { text: "検察官", kana: "けんさつかん" },
+  { text: "弁護士", kana: "べんごし" },
+  { text: "司法書士", kana: "しほうしょし" },
+  { text: "行政書士", kana: "ぎょうせいしょし" },
+  { text: "通説", kana: "つうせつ" },
+  { text: "有力説", kana: "ゆうりょくせつ" },
+  { text: "少数説", kana: "しょうすうせつ" },
+  { text: "条文", kana: "じょうぶん" },
+  { text: "公布", kana: "こうふ" },
+  { text: "施行", kana: "しこう" },
+  { text: "解釈", kana: "かいしゃく" },
+  { text: "適用", kana: "てきよう" },
+  { text: "準用", kana: "じゅんよう" },
+  { text: "類推適用", kana: "るいすいてきよう" },
+  { text: "反対解釈", kana: "はんたいかいしゃく" },
+  { text: "公序良俗", kana: "こうじょりょうぞく" },
+  { text: "信義誠実の原則", kana: "しんぎせいじつのげんそく" },
+  { text: "権利の濫用", kana: "けんりのらんよう" }
+];
+
+const KEYBOARD_LAYOUT = [
+  ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
+  ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', '-'],
+  ['z', 'x', 'c', 'v', 'b', 'n', 'm']
+];
+
+// --- ユーティリティ: ひらがな解析 ---
+const getNodeConsonant = (char, nextChar) => {
+  if (!char) return null;
+  const combo = char + (nextChar || '');
+  if (COMBO_MAP[combo]) return COMBO_MAP[combo][0][0];
+  if (KANA_MAP[char]) return KANA_MAP[char][0][0];
+  return null;
+};
+
+const parseKana = (kana) => {
+  const nodes = [];
+  let i = 0;
+  while (i < kana.length) {
+    let char = kana[i];
+    let nextChar = kana[i + 1];
+    let combo = char + (nextChar || '');
+    let options = [];
+    let isCombo = false;
+    let isSokuon = (char === 'っ');
+
+    if (nextChar && COMBO_MAP[combo]) {
+      options = [...COMBO_MAP[combo]];
+      isCombo = true;
+    } else if (isSokuon) {
+      options = KANA_MAP['っ']; // KANA_MAPから取得するように変更
+    } else {
+      options = KANA_MAP[char] ? [...KANA_MAP[char]] : [char];
+    }
+
+    let defaultDisplay = options[0];
+    if (isSokuon && !isCombo && i + 1 < kana.length) {
+       const nextCon = getNodeConsonant(kana[i+1], kana[i+2]);
+       if (nextCon) {
+           defaultDisplay = nextCon; 
+       }
+    }
+
+    nodes.push({
+      char: isCombo ? combo : char,
+      options: options, 
+      input: '', 
+      selectedOption: defaultDisplay, 
+      isDone: false,
+      isSokuon: isSokuon,
+      nextConsonant: (!isCombo && !isSokuon && i + 1 < kana.length) ? getNodeConsonant(kana[i+1], kana[i+2]) : null
+    });
+
+    i += isCombo ? 2 : 1;
+  }
+  return nodes;
+};
+
+// --- Web Audio API ヘルパー ---
+class SoundEngine {
+  constructor() {
+    this.ctx = null;
+    this.gainNode = null;
+  }
+
+  init() {
+    if (!this.ctx) {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      this.gainNode = this.ctx.createGain();
+      this.gainNode.connect(this.ctx.destination);
+      this.gainNode.gain.value = 0.15;
+    }
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume();
+    }
+  }
+
+  playType() {
+    if (!this.ctx) this.init();
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(800, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 0.05);
+    gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.05);
+    osc.connect(gain);
+    gain.connect(this.gainNode);
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.05);
+  }
+
+  playMiss() {
+    if (!this.ctx) this.init();
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+    osc.frequency.linearRampToValueAtTime(100, this.ctx.currentTime + 0.2);
+    gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.2);
+    osc.connect(gain);
+    gain.connect(this.gainNode);
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.2);
+  }
+
+  playSuccess() {
+    if (!this.ctx) this.init();
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1200, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1800, this.ctx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+    osc.connect(gain);
+    gain.connect(this.gainNode);
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.15);
+  }
+}
+
+const soundEngine = new SoundEngine();
+
+// --- Switch Component (iPhone Style) ---
+const Switch = ({ checked, onChange, label, activeColorClass = "bg-green-500" }) => (
+    <button
+        onClick={() => onChange(!checked)}
+        className="flex items-center justify-between w-full group focus:outline-none"
+    >
+        <span className="text-slate-200 font-bold">{label}</span>
+        <div className={`relative w-12 h-7 rounded-full transition-colors duration-200 ease-in-out ${checked ? activeColorClass : 'bg-slate-600'}`}>
+            <div className={`absolute top-1 left-1 bg-white w-5 h-5 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${checked ? 'translate-x-5' : 'translate-x-0'}`} />
+        </div>
+    </button>
+);
+
+export default function AdaptiveTyper() {
+  const [gameState, setGameState] = useState('menu');
+  const [isPaused, setIsPaused] = useState(false); // ポーズ状態
+  const [currentWordData, setCurrentWordData] = useState(null);
+  const [score, setScore] = useState(0);
+  
+  // Settings & Modal State
+  const [settings, setSettings] = useState({
+    duration: 60,
+    sound: true,
+    displayMode: 'ime', // 'ime' | 'guide' | 'input'
+    gameMode: 'normal', // 'normal' | 'legal'
+    weakKeyRate: 0.6, // 0.0 ~ 1.0 (苦手キー優先出題率)
+    ignoreVowels: false, // 追加: 母音を除外するかどうか
+    realMode: false // 追加: リアル入力モード
+  });
+  const [focusKeys, setFocusKeys] = useState(() => {
+    const saved = localStorage.getItem('neoTypeFocusKeys');
+    return saved ? JSON.parse(saved) : [];
+  });
+  
+  const [showSettings, setShowSettings] = useState(false);
+  const [showStats, setShowStats] = useState(false);
+  const [showKeyboardSelector, setShowKeyboardSelector] = useState(false);
+
+  const [timeLeft, setTimeLeft] = useState(settings.duration);
+  const [missStats, setMissStats] = useState(() => {
+    const saved = localStorage.getItem('neoTypeMissStats');
+    return saved ? JSON.parse(saved) : {};
+  });
+  const [combo, setCombo] = useState(0);
+  const [maxCombo, setMaxCombo] = useState(0);
+  const [shake, setShake] = useState(false);
+  const [feedback, setFeedback] = useState(null);
+  const timerRef = useRef(null);
+
+  const playSound = useCallback((type) => {
+    if (!settings.sound) return;
+    try {
+      if (type === 'type') soundEngine.playType();
+      if (type === 'miss') soundEngine.playMiss();
+      if (type === 'success') soundEngine.playSuccess();
+    } catch (e) {
+      console.error("Audio playback error:", e);
+    }
+  }, [settings.sound]);
+
+  // FocusKeysを保存
+  useEffect(() => {
+    localStorage.setItem('neoTypeFocusKeys', JSON.stringify(focusKeys));
+  }, [focusKeys]);
+
+  const startGame = useCallback(() => {
+    if (settings.sound) soundEngine.init();
+
+    setGameState('playing');
+    setIsPaused(false);
+    setScore(0);
+    setCombo(0);
+    setMaxCombo(0);
+    setTimeLeft(settings.duration);
+    setFeedback(null);
+    pickNextWord(missStats, focusKeys, settings.gameMode, settings.ignoreVowels);
+    
+    // タイマー管理は別のuseEffectで行う
+  }, [settings.duration, settings.sound, settings.gameMode, settings.weakKeyRate, settings.ignoreVowels, missStats, focusKeys]);
+
+  // タイマー制御のuseEffect
+  useEffect(() => {
+    if (gameState !== 'playing') {
+      if (timerRef.current) clearInterval(timerRef.current);
+      return;
+    }
+
+    if (isPaused) {
+      if (timerRef.current) clearInterval(timerRef.current);
+      return;
+    }
+
+    timerRef.current = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          endGame();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [gameState, isPaused]);
+
+  const endGame = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    setGameState('finished');
+    if (settings.sound) soundEngine.playSuccess();
+    localStorage.setItem('neoTypeMissStats', JSON.stringify(missStats));
+  };
+
+  const resetStats = () => {
+    if (window.confirm("学習データを完全にリセットしますか？\n(Weak Keys Analysis Reset)")) {
+      setMissStats({});
+      localStorage.removeItem('neoTypeMissStats');
+      setShowStats(false);
+    }
+  };
+
+  const toggleFocusKey = (key) => {
+    setFocusKeys(prev => 
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    );
+  };
+
+  // --- 出題ロジック ---
+  const pickNextWord = (currentStats, currentFocusKeys, mode, ignoreVowels) => {
+    let autoWeakKeys = Object.entries(currentStats)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5)
+      .map(([key]) => key);
+
+    // 設定がONなら自動検出から母音を除外
+    if (ignoreVowels) {
+        const vowels = ['a', 'i', 'u', 'e', 'o', '-'];
+        autoWeakKeys = autoWeakKeys.filter(k => !vowels.includes(k));
+    }
+
+    const manualFocusKeys = currentFocusKeys || [];
+    let targetKeys = Array.from(new Set([...autoWeakKeys, ...manualFocusKeys]));
+
+    // 最終的なターゲットキーからも母音を除外（手動設定も考慮）
+    if (ignoreVowels) {
+        const vowels = ['a', 'i', 'u', 'e', 'o', '-'];
+        targetKeys = targetKeys.filter(k => !vowels.includes(k));
+    }
+
+    // モードに応じてリストを選択
+    const wordList = mode === 'legal' ? LEGAL_WORDS : INITIAL_WORDS;
+
+    let candidates = [];
+    let isWeakMode = false;
+
+    // 苦手キー優先ロジック
+    // settings.weakKeyRate (0.0 - 1.0) の確率で苦手キーを含む単語を優先
+    if (targetKeys.length > 0 && Math.random() < settings.weakKeyRate) {
+      candidates = wordList.filter(word => {
+        const defaultRomaji = parseKana(word.kana).map(n => n.options[0]).join('');
+        return targetKeys.some(k => defaultRomaji.includes(k));
+      });
+      if (candidates.length > 0) {
+          isWeakMode = true;
+      }
+    }
+
+    // 候補がない場合、または確率でランダム出題
+    if (candidates.length === 0) {
+      candidates = wordList;
+      isWeakMode = false;
+    }
+
+    const nextWord = candidates[Math.floor(Math.random() * candidates.length)];
+    setCurrentWordData({
+      text: nextWord.text,
+      kana: nextWord.kana,
+      nodes: parseKana(nextWord.kana),
+      isWeakMode: isWeakMode // フラグを保持
+    });
+  };
+
+  // --- キーイベント制御 ---
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (showSettings || showStats || showKeyboardSelector) return;
+
+      if (isPaused) return;
+
+      if (e.code === 'Space') {
+        if (gameState === 'menu' || gameState === 'finished') {
+          e.preventDefault();
+          startGame();
+          return;
+        }
+        if (gameState === 'playing') {
+            e.preventDefault();
+            return; 
+        }
+      }
+
+      if (gameState !== 'playing' || !currentWordData) return;
+      if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab', 'Escape'].includes(e.key)) return;
+
+      // Handle Backspace for Real Mode
+      if (e.key === 'Backspace' && settings.realMode) {
+          const nodes = [...currentWordData.nodes];
+          const activeNodeIndex = nodes.findIndex(n => !n.isDone);
+          
+          if (activeNodeIndex !== -1) {
+              const node = nodes[activeNodeIndex];
+              if (node.input.length > 0) {
+                  node.input = node.input.slice(0, -1);
+                  
+                  // Re-evaluate selected option based on remaining input
+                  // Only update if input matches a prefix of an option
+                  const validOption = node.options.find(opt => opt.startsWith(node.input));
+                  if (validOption) {
+                      node.selectedOption = validOption;
+                  }
+                  // If no valid option (still have typo prefix), keep selectedOption as is
+                  
+                  setCurrentWordData({ ...currentWordData, nodes });
+              }
+          }
+          return;
+      }
+
+      const inputChar = e.key.toLowerCase();
+      const nodes = [...currentWordData.nodes];
+      const activeNodeIndex = nodes.findIndex(n => !n.isDone);
+      
+      if (activeNodeIndex === -1) return;
+
+      const node = nodes[activeNodeIndex];
+      const nextNode = nodes[activeNodeIndex + 1];
+
+      let isCorrect = false;
+      const currentInput = node.input + inputChar;
+
+      // --- 1. 共通: 特殊判定 (促音・ん) ---
+      // これらはモードに関わらず正解なら即座に適用する
+
+      // 1-A. 促音特例 ('っ' + 次の子音)
+      if (!isCorrect && node.isSokuon && nextNode) {
+        const nextConsonants = nextNode.options.map(opt => opt[0]);
+        if (nextConsonants.includes(inputChar)) {
+            node.selectedOption = inputChar; // 表示用に打ったキーを採用
+            node.input = inputChar;
+            node.isDone = true;
+            isCorrect = true;
+        }
+      }
+
+      // 1-B. 「ん」特例 ('n' + 次の入力がナ行以外等の場合)
+      if (!isCorrect && node.char === 'ん' && node.input === 'n') {
+         if (nextNode) {
+            const nextNodeValidStart = nextNode.options.some(opt => opt.startsWith(inputChar));
+            // 次の文字の入力として成立する場合（つまり 'nn' じゃなくて 'n'+次の文字 で進める場合）
+            if (nextNodeValidStart) {
+                // 現在の 'ん' を完了にする
+                node.isDone = true;
+                node.selectedOption = 'n';
+                
+                // 次のノードの入力として処理する
+                const nextNodeInput = inputChar;
+                const nextNodeValidOption = nextNode.options.find(opt => opt.startsWith(nextNodeInput));
+                
+                if (nextNodeValidOption) {
+                    // 次のノードも正解の入力だった場合
+                    nextNode.input = nextNodeInput;
+                    nextNode.selectedOption = nextNodeValidOption;
+                    if (nextNode.input === nextNodeValidOption) nextNode.isDone = true;
+                    isCorrect = true;
+                } else if (settings.realMode) {
+                    // RealModeの場合、次のノードへの入力が間違っていても受け入れる
+                    // ただし、'isCorrect' は false のままにしてミスカウントさせるか、
+                    // ここでは「ん」の成功だけを優先するか。
+                    // 複雑さを避けるため、ここでは「ん」のショートカット成功のみを扱い、
+                    // 次の文字の入力は次回のループ（ここでの処理外）にはできないため、
+                    // RealMode特有の「誤入力反映」を行う。
+                    nextNode.input = nextNodeInput;
+                    // 正解ではないので isCorrect は false
+                }
+            }
+         }
+      }
+
+      // --- 2. モード別判定 (通常入力) ---
+      if (!isCorrect) {
+          if (settings.realMode) {
+              // Real Mode Logic
+              // 常に文字を受け入れる
+              node.input = currentInput;
+              
+              const isPrefixOfAnyOption = node.options.some(opt => opt.startsWith(currentInput));
+              if (isPrefixOfAnyOption) {
+                  isCorrect = true;
+                  // 最適なオプションを選択
+                  const bestMatch = node.options.find(opt => opt.startsWith(currentInput));
+                  if (bestMatch) node.selectedOption = bestMatch;
+                  
+                  if (node.input === node.selectedOption) {
+                      node.isDone = true;
+                  }
+              } else {
+                  // Typo
+                  isCorrect = false;
+              }
+          } else {
+              // Normal Mode Logic
+              const validOption = node.options.find(opt => opt.startsWith(currentInput));
+              if (validOption) {
+                  isCorrect = true;
+                  node.input = currentInput;
+                  node.selectedOption = validOption; 
+                  if (node.input === validOption) {
+                      node.isDone = true;
+                  }
+              }
+          }
+      }
+
+      if (isCorrect) {
+        playSound('type');
+        setCombo(c => c + 1);
+        setCurrentWordData({ ...currentWordData, nodes });
+
+        if (nodes.every(n => n.isDone)) {
+          const addedScore = 100 + (combo * 10);
+          setScore(s => s + addedScore);
+          setFeedback({ id: Date.now(), text: 'Perfect!', color: 'text-green-400' });
+          playSound('success');
+          pickNextWord(missStats, focusKeys, settings.gameMode, settings.ignoreVowels);
+        }
+      } else {
+        playSound('miss');
+        setCombo(0);
+        setShake(true);
+        setTimeout(() => setShake(false), 300);
+        setFeedback({ id: Date.now(), text: 'Miss!', color: 'text-red-500' });
+        
+        // In real mode, we also update state to show the wrong char
+        if (settings.realMode) {
+             setCurrentWordData({ ...currentWordData, nodes });
+        }
+
+        const targetChar = node.selectedOption[node.input.length] || node.selectedOption[0]; // fallback
+        if (targetChar) {
+            setMissStats(prev => ({
+                ...prev,
+                [targetChar]: (prev[targetChar] || 0) + 1
+            }));
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [gameState, isPaused, currentWordData, combo, missStats, focusKeys, showSettings, showStats, showKeyboardSelector, settings.gameMode, settings.weakKeyRate, settings.ignoreVowels, settings.realMode, startGame, playSound]);
+
+  useEffect(() => {
+    if (combo > maxCombo) setMaxCombo(combo);
+  }, [combo, maxCombo]);
+
+  // --- Components: Pause Overlay ---
+  const PauseOverlay = () => (
+    <div className="absolute inset-0 bg-slate-900/80 z-40 flex flex-col items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+       <h2 className="text-4xl font-black text-white mb-8 tracking-widest">PAUSED</h2>
+       <div className="flex flex-col gap-4 w-full max-w-xs">
+         <button 
+           onClick={() => setIsPaused(false)}
+           className="flex items-center justify-center gap-3 px-8 py-4 bg-cyan-600 hover:bg-cyan-500 rounded-xl font-bold text-xl text-white transition-all shadow-lg"
+         >
+           <Play className="w-6 h-6 fill-current"/> Resume
+         </button>
+         <button 
+           onClick={() => setGameState('menu')}
+           className="flex items-center justify-center gap-3 px-8 py-4 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold text-xl text-slate-300 transition-all border border-slate-600"
+         >
+           <LogOut className="w-6 h-6"/> Quit
+         </button>
+       </div>
+    </div>
+  );
+
+  // --- Components: Keyboard Selector Modal ---
+  const KeyboardSelector = () => (
+    <div className="absolute inset-0 bg-slate-900/95 z-[60] flex items-center justify-center p-4 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-slate-800 p-8 rounded-2xl border border-slate-700 w-full max-w-3xl shadow-2xl relative flex flex-col items-center">
+        <button onClick={() => setShowKeyboardSelector(false)} className="absolute top-4 right-4 text-slate-500 hover:text-white">
+            <X className="w-6 h-6"/>
+        </button>
+        
+        <h3 className="text-xl font-bold text-slate-200 mb-2 flex items-center gap-2">
+            <Target className="w-5 h-5 text-cyan-400"/>
+            苦手キーを指定
+        </h3>
+        <p className="text-slate-400 text-sm mb-8">
+            クリックして重点的に練習したいキーを選択してください（青色が選択中）
+        </p>
+
+        <div className="flex flex-col gap-2 mb-8 select-none">
+            {KEYBOARD_LAYOUT.map((row, rowIndex) => (
+                <div key={rowIndex} className="flex justify-center gap-2">
+                    {row.map(key => {
+                        const isSelected = focusKeys.includes(key);
+                        return (
+                            <button
+                                key={key}
+                                onClick={() => toggleFocusKey(key)}
+                                className={`w-12 h-12 rounded-lg font-mono font-bold text-lg uppercase transition-all duration-150 transform active:scale-95
+                                    ${isSelected 
+                                        ? 'bg-cyan-600 text-white shadow-[0_0_15px_rgba(8,145,178,0.5)] border-cyan-400' 
+                                        : 'bg-slate-700 text-slate-400 hover:bg-slate-600 border-slate-600'
+                                    } border`}
+                            >
+                                {key}
+                            </button>
+                        );
+                    })}
+                </div>
+            ))}
+        </div>
+
+        <div className="flex gap-4">
+             <button 
+                onClick={() => setFocusKeys([])}
+                className="px-6 py-3 rounded-xl font-bold text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+            >
+                Clear All
+            </button>
+            <button 
+                onClick={() => setShowKeyboardSelector(false)}
+                className="px-8 py-3 bg-cyan-600 hover:bg-cyan-500 rounded-xl font-bold text-white transition-colors shadow-lg"
+            >
+                Done
+            </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // --- Components: Settings Modal ---
+  const SettingsPanel = () => (
+    <div className="absolute inset-0 bg-slate-900/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-slate-800 p-8 rounded-2xl border border-slate-700 w-full max-w-xl shadow-2xl space-y-6 relative max-h-[85vh] overflow-y-auto">
+        <button onClick={() => setShowSettings(false)} className="absolute top-4 right-4 text-slate-500 hover:text-white sticky top-0">
+            <X className="w-6 h-6"/>
+        </button>
+        <h2 className="text-2xl font-bold flex items-center gap-2 border-b border-slate-700 pb-4">
+          <Settings className="w-6 h-6 text-cyan-400" /> Settings
+        </h2>
+        
+        {/* 1. Time Settings */}
+        <div className="space-y-2">
+          <label className="text-slate-400 text-sm font-bold uppercase tracking-wider flex items-center gap-2">
+            <Clock className="w-4 h-4" /> Game Duration
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            {[30, 60, 90, 120, 180, 300].map(time => (
+              <button
+                key={time}
+                onClick={() => setSettings(s => ({ ...s, duration: time }))}
+                className={`py-2 rounded-lg font-bold transition-all ${
+                  settings.duration === time 
+                  ? 'bg-cyan-600 text-white shadow-[0_0_15px_rgba(8,145,178,0.5)]' 
+                  : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                }`}
+              >
+                {time}s
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 2. Focus Keys Settings */}
+        <div className="space-y-2">
+          <label className="text-slate-400 text-sm font-bold uppercase tracking-wider flex items-center gap-2">
+            <Target className="w-4 h-4" /> 苦手キーを指定
+          </label>
+          <div className="bg-slate-700/50 p-4 rounded-xl border border-slate-600 flex flex-col gap-3">
+             <div className="text-xs text-slate-400">
+                {focusKeys.length > 0 
+                  ? <span className="text-cyan-400 font-mono font-bold break-all">{focusKeys.join(', ').toUpperCase()}</span>
+                  : "No keys selected (Auto only)"}
+             </div>
+             <button
+                onClick={() => setShowKeyboardSelector(true)}
+                className="w-full py-2 bg-slate-600 hover:bg-slate-500 rounded-lg text-sm font-bold text-white transition-colors flex items-center justify-center gap-2"
+             >
+                <Keyboard className="w-4 h-4"/> Select Keys on Keyboard
+             </button>
+             
+             {/* New Switch for Ignore Vowels */}
+             <div className="flex items-center justify-between py-2 border-t border-slate-600/50 mt-2">
+                <span className="text-xs font-bold text-slate-300">母音(AIUEO)を分析から除外</span>
+                <div className="scale-75 origin-right">
+                    <Switch 
+                        checked={settings.ignoreVowels} 
+                        onChange={(checked) => setSettings(s => ({ ...s, ignoreVowels: checked }))}
+                        label=""
+                        activeColorClass="bg-cyan-600"
+                    />
+                </div>
+             </div>
+
+             {/* Weak Key Rate Slider */}
+             <div className="pt-2 border-t border-slate-600/50">
+                <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs font-bold text-slate-300">苦手キー出現率</span>
+                    <span className="text-xs font-mono text-cyan-400">{Math.round(settings.weakKeyRate * 100)}%</span>
+                </div>
+                <input 
+                    type="range" 
+                    min="0" 
+                    max="1" 
+                    step="0.1" 
+                    value={settings.weakKeyRate} 
+                    onChange={(e) => setSettings(s => ({ ...s, weakKeyRate: parseFloat(e.target.value) }))}
+                    className="w-full h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                />
+             </div>
+          </div>
+        </div>
+
+        {/* 3. Sound Settings */}
+        <div className="space-y-2">
+          <label className="text-slate-400 text-sm font-bold uppercase tracking-wider flex items-center gap-2">
+            {settings.sound ? <Volume2 className="w-4 h-4"/> : <VolumeX className="w-4 h-4"/>} 
+            Sound Effects
+          </label>
+          <div className="flex gap-2 bg-slate-700 p-1 rounded-lg">
+            <button
+              onClick={() => setSettings(s => ({ ...s, sound: true }))}
+              className={`flex-1 py-2 rounded-md font-bold text-sm transition-all ${
+                settings.sound ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              ON
+            </button>
+            <button
+              onClick={() => setSettings(s => ({ ...s, sound: false }))}
+              className={`flex-1 py-2 rounded-md font-bold text-sm transition-all ${
+                !settings.sound ? 'bg-red-500/80 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              OFF
+            </button>
+          </div>
+        </div>
+
+        {/* 4. Display Mode Settings */}
+        <div className="space-y-2">
+          <label className="text-slate-400 text-sm font-bold uppercase tracking-wider flex items-center gap-2">
+            <Eye className="w-4 h-4"/> 
+            Display Mode
+          </label>
+          <div className="flex gap-2 bg-slate-700 p-1 rounded-lg">
+            <button
+              onClick={() => setSettings(s => ({ ...s, displayMode: 'ime' }))}
+              className={`flex-1 py-2 rounded-md font-bold text-sm transition-all flex flex-col items-center justify-center ${
+                settings.displayMode === 'ime' ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center gap-1"><Languages className="w-3 h-3"/> IME</div>
+              <span className="text-[10px] font-normal opacity-80">ひらがな変換</span>
+            </button>
+            <button
+              onClick={() => setSettings(s => ({ ...s, displayMode: 'input' }))}
+              className={`flex-1 py-2 rounded-md font-bold text-sm transition-all flex flex-col items-center justify-center ${
+                settings.displayMode === 'input' ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center gap-1"><EyeOff className="w-3 h-3"/> Input</div>
+              <span className="text-[10px] font-normal opacity-80">打つと表示</span>
+            </button>
+            <button
+              onClick={() => setSettings(s => ({ ...s, displayMode: 'guide' }))}
+              className={`flex-1 py-2 rounded-md font-bold text-sm transition-all flex flex-col items-center justify-center ${
+                settings.displayMode === 'guide' ? 'bg-cyan-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center gap-1"><Eye className="w-3 h-3"/> Guide</div>
+              <span className="text-[10px] font-normal opacity-80">最初から表示</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 5. Game Mode Settings (iPhone Style Switch) - Moved to bottom with top border */}
+        <div className="flex flex-col gap-4 py-4 border-t border-slate-700/50 mt-4">
+             {/* Legal Mode Switch */}
+             <div className="flex items-center justify-between">
+                 <div className="flex items-center gap-3">
+                     <div className={`p-2 rounded-lg ${settings.gameMode === 'legal' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-700 text-slate-400'}`}>
+                         {settings.gameMode === 'legal' ? <Scale className="w-5 h-5"/> : <Keyboard className="w-5 h-5"/>}
+                     </div>
+                     <div className="flex flex-col">
+                         <span className="font-bold text-slate-200">Legal Terms Mode</span>
+                         <span className="text-xs text-slate-500">法律用語（200語）で練習する</span>
+                     </div>
+                 </div>
+                 <div>
+                     <Switch 
+                        checked={settings.gameMode === 'legal'} 
+                        onChange={(checked) => setSettings(s => ({ ...s, gameMode: checked ? 'legal' : 'normal' }))}
+                        label=""
+                        activeColorClass="bg-indigo-600"
+                     />
+                 </div>
+             </div>
+
+             {/* Real Mode Switch */}
+             <div className="flex items-center justify-between">
+                 <div className="flex items-center gap-3">
+                     <div className={`p-2 rounded-lg ${settings.realMode ? 'bg-red-500/20 text-red-400' : 'bg-slate-700 text-slate-400'}`}>
+                         <Delete className="w-5 h-5"/>
+                     </div>
+                     <div className="flex flex-col">
+                         <span className="font-bold text-slate-200">Real Typing Mode</span>
+                         <span className="text-xs text-slate-500">ミスをBackspaceで消す実戦形式</span>
+                     </div>
+                 </div>
+                 <div>
+                     <Switch 
+                        checked={settings.realMode} 
+                        onChange={(checked) => setSettings(s => ({ ...s, realMode: checked }))}
+                        label=""
+                        activeColorClass="bg-red-600"
+                     />
+                 </div>
+             </div>
+        </div>
+
+        <button 
+          onClick={() => setShowSettings(false)}
+          className="w-full py-4 bg-slate-700 hover:bg-slate-600 rounded-xl font-bold text-white transition-colors"
+        >
+          Close & Save
+        </button>
+      </div>
+    </div>
+  );
+
+  // --- Components: Stats Viewer Modal ---
+  const StatsPanel = () => {
+    const sortedStats = Object.entries(missStats).sort(([, a], [, b]) => b - a);
+    
+    return (
+      <div className="absolute inset-0 bg-slate-900/95 z-50 flex items-center justify-center p-4 backdrop-blur-md animate-in fade-in duration-200">
+        <div className="bg-slate-800 rounded-2xl border border-slate-700 w-full max-w-2xl h-[80vh] flex flex-col shadow-2xl">
+          {/* Header */}
+          <div className="p-6 border-b border-slate-700 flex justify-between items-center">
+             <h2 className="text-2xl font-bold flex items-center gap-3">
+                <BarChart2 className="w-6 h-6 text-yellow-400" /> 
+                Learning Data
+                <span className="text-sm font-normal text-slate-400 ml-2">累積ミス回数ランキング</span>
+             </h2>
+             <button onClick={() => setShowStats(false)} className="p-2 hover:bg-slate-700 rounded-full transition-colors">
+                <X className="w-6 h-6 text-slate-400"/>
+             </button>
+          </div>
+
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {sortedStats.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-slate-500 space-y-4">
+                    <Trophy className="w-16 h-16 text-slate-700" />
+                    <p>データがありません。ゲームをプレイしてデータを集めましょう。</p>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {sortedStats.map(([key, count], index) => (
+                        <div key={key} className="flex items-center justify-between bg-slate-700/50 p-4 rounded-xl border border-slate-700/50">
+                            <div className="flex items-center gap-4">
+                                <span className={`flex items-center justify-center w-8 h-8 rounded font-bold text-sm
+                                    ${index === 0 ? 'bg-yellow-500 text-black' : 
+                                      index === 1 ? 'bg-gray-400 text-black' : 
+                                      index === 2 ? 'bg-orange-600 text-white' : 'bg-slate-600 text-slate-300'}`}>
+                                    {index + 1}
+                                </span>
+                                <span className="text-3xl font-mono font-bold text-white uppercase">{key}</span>
+                            </div>
+                            <div className="text-right">
+                                <span className="text-2xl font-bold text-red-400">{count}</span>
+                                <span className="text-xs text-slate-500 block">misses</span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="p-6 border-t border-slate-700 bg-slate-800/50 flex justify-between items-center rounded-b-2xl">
+              <button 
+                onClick={resetStats}
+                className="flex items-center gap-2 text-red-400 hover:text-red-300 transition-colors text-sm font-bold px-4 py-2 hover:bg-red-900/20 rounded-lg"
+              >
+                <Trash2 className="w-4 h-4" /> データリセット
+              </button>
+              <button 
+                onClick={() => setShowStats(false)}
+                className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-bold transition-colors"
+              >
+                閉じる
+              </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // --- UI Render ---
+  if (gameState === 'menu') {
+    return (
+      <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-4 font-sans select-none relative overflow-hidden">
+        {showKeyboardSelector && <KeyboardSelector />}
+        {showSettings && <SettingsPanel />}
+        {showStats && <StatsPanel />}
+        
+        {/* Settings Button */}
+        <button 
+          onClick={() => setShowSettings(true)}
+          className="absolute top-6 right-6 p-3 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-400 hover:text-cyan-400 transition-all border border-slate-700 hover:border-cyan-400 z-10"
+        >
+          <Settings className="w-6 h-6" />
+        </button>
+
+        <div className="max-w-md w-full text-center space-y-8">
+          <div className="space-y-2">
+            <h1 className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-600 tracking-tighter filter drop-shadow-lg">
+              NEO-TYPE
+              <span className="text-sm font-normal text-slate-500 block mt-2 tracking-widest">さよなら苦手キー</span>
+            </h1>
+          </div>
+          
+          <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700 backdrop-blur-sm shadow-xl space-y-4">
+            <p className="mb-4 text-sm text-slate-300 leading-relaxed text-left">
+              あなたが指定した苦手キーと過去のミス回数を学習、分析し、今のあなたに最適な問題を出し続け、最短ルートでのタイピング力向上をサポートします。
+            </p>
+            
+            <div className="flex flex-col gap-3">
+              <button 
+                onClick={startGame}
+                className={`group relative w-full px-8 py-4 rounded-xl font-bold text-xl transition-all shadow-[0_0_20px_rgba(8,145,178,0.5)] hover:shadow-[0_0_30px_rgba(34,211,238,0.6)] overflow-hidden ${settings.gameMode === 'legal' ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-cyan-600 hover:bg-cyan-500'}`}
+              >
+                <span className="relative z-10 flex items-center justify-center gap-2">
+                  {settings.gameMode === 'legal' ? <Scale className="w-6 h-6" /> : <Play className="w-6 h-6" />} START
+                </span>
+              </button>
+              <div className="text-xs text-slate-500 font-mono">Press [SPACE] to Start</div>
+            </div>
+
+            {/* 学習データ確認ボタン */}
+            <button 
+              onClick={() => setShowStats(true)}
+              className="w-full py-3 mt-2 bg-slate-700/50 hover:bg-slate-700 rounded-xl font-bold text-slate-300 hover:text-white transition-all border border-slate-600 flex items-center justify-center gap-2"
+            >
+              <BarChart2 className="w-5 h-5" /> 学習データ詳細を見る
+            </button>
+          </div>
+          
+          <div className="text-xs text-slate-600 flex justify-center gap-4 flex-wrap">
+            <span className="flex items-center gap-1"><Clock className="w-3 h-3"/> {settings.duration}s</span>
+            <span className="flex items-center gap-1">
+              {settings.sound ? <Volume2 className="w-3 h-3"/> : <VolumeX className="w-3 h-3"/>} {settings.sound ? 'ON' : 'OFF'}
+            </span>
+            <span className="flex items-center gap-1 text-cyan-500">
+               {settings.displayMode === 'ime' && <Languages className="w-3 h-3"/>}
+               {settings.displayMode === 'guide' && <Eye className="w-3 h-3"/>}
+               {settings.displayMode === 'input' && <EyeOff className="w-3 h-3"/>}
+               {settings.displayMode === 'ime' ? 'IME' : settings.displayMode === 'guide' ? 'Guide' : 'Input'}
+            </span>
+            <span className={`flex items-center gap-1 ${settings.gameMode === 'legal' ? 'text-indigo-400 font-bold' : 'text-slate-500'}`}>
+                {settings.gameMode === 'legal' ? <Scale className="w-3 h-3"/> : <Keyboard className="w-3 h-3"/>}
+                {settings.gameMode === 'legal' ? 'Legal Mode' : 'Normal'}
+            </span>
+            {settings.realMode && (
+                <span className="flex items-center gap-1 text-red-400 font-bold">
+                    <Delete className="w-3 h-3"/> Real Mode
+                </span>
+            )}
+          </div>
+        </div>
+        <div className="absolute bottom-4 right-4 text-xs text-slate-600 font-mono select-none">
+          © Tadashi Kotegawa
+        </div>
+      </div>
+    );
+  }
+
+  // --- Result Screen ---
+  if (gameState === 'finished') {
+    const sortedMisses = Object.entries(missStats).sort(([, a], [, b]) => b - a);
+
+    return (
+      <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-4 font-sans select-none">
+        {showStats && <StatsPanel />}
+
+        <div className="max-w-2xl w-full bg-slate-800 rounded-3xl p-8 border border-slate-700 shadow-2xl space-y-8 animate-in zoom-in-95 duration-300">
+          <div className="text-center space-y-2">
+            <h2 className="text-4xl font-bold text-white">Result</h2>
+            <div className={`text-6xl font-black ${settings.gameMode === 'legal' ? 'text-indigo-400' : 'text-cyan-400'}`}>{score.toLocaleString()} <span className="text-2xl text-slate-500">pts</span></div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-slate-900/50 p-4 rounded-xl flex items-center justify-between border border-slate-700">
+              <span className="text-slate-400 flex items-center gap-2"><Trophy className="w-5 h-5"/> Max Combo</span>
+              <span className="text-2xl font-bold text-yellow-400">{maxCombo}</span>
+            </div>
+            <div className="bg-slate-900/50 p-4 rounded-xl flex items-center justify-between border border-slate-700">
+              <span className="text-slate-400 flex items-center gap-2"><AlertCircle className="w-5 h-5"/> Total Misses</span>
+              <span className="text-2xl font-bold text-red-400">
+                {Object.values(missStats).reduce((a, b) => a + b, 0)}
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-bold text-slate-300 flex items-center gap-2">
+                <Zap className="w-5 h-5 text-yellow-400"/> Weak Keys Analysis
+              </h3>
+              <button onClick={() => setShowStats(true)} className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-bold">
+                 <BarChart2 className="w-3 h-3" /> View Details
+              </button>
+            </div>
+            {sortedMisses.length > 0 ? (
+              <div className="grid grid-cols-5 gap-2">
+                {sortedMisses.slice(0, 10).map(([key, count]) => (
+                  <div key={key} className="flex flex-col items-center bg-red-900/20 border border-red-500/30 rounded-lg p-2">
+                    <span className="text-2xl font-mono font-bold text-red-400 uppercase">{key}</span>
+                    <span className="text-xs text-red-300">{count} miss</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-green-400 bg-green-900/20 p-3 rounded-lg text-center border border-green-500/30">
+                Perfect Typing!
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col items-center gap-2 pt-4">
+            <button 
+              onClick={startGame}
+              className={`flex items-center gap-2 px-8 py-3 rounded-xl font-bold transition-colors shadow-lg hover:shadow-cyan-500/25 ${settings.gameMode === 'legal' ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-cyan-600 hover:bg-cyan-500'}`}
+            >
+              <RotateCcw className="w-5 h-5" /> もう一度挑戦
+            </button>
+            <div className="text-xs text-slate-500 font-mono">Press [SPACE] to Retry</div>
+            
+            <button onClick={() => setGameState('menu')} className="mt-2 text-sm text-slate-400 hover:text-white underline">
+              Back to Menu
+            </button>
+          </div>
+        </div>
+        <div className="absolute bottom-4 right-4 text-xs text-slate-600 font-mono select-none">
+          © Tadashi Kotegawa
+        </div>
+      </div>
+    );
+  }
+
+  // --- Playing UI ---
+  return (
+    <div className="min-h-screen bg-slate-900 text-white flex flex-col font-sans select-none overflow-hidden">
+      
+      {/* Animation Styles */}
+      <style>{`
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          25% { transform: translateX(-4px); }
+          75% { transform: translateX(4px); }
+        }
+        .animate-shake {
+          animation: shake 0.2s cubic-bezier(.36,.07,.19,.97) both;
+        }
+        
+        @keyframes floatUp {
+          0% { opacity: 1; transform: translateY(0) scale(1); }
+          50% { opacity: 1; transform: translateY(-20px) scale(1.1); }
+          100% { opacity: 0; transform: translateY(-40px) scale(1.2); }
+        }
+        .animate-float-up {
+          animation: floatUp 0.6s ease-out forwards;
+        }
+      `}</style>
+
+      {/* Pause Overlay */}
+      {isPaused && <PauseOverlay />}
+
+      <div className="p-6 flex justify-between items-end border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-10">
+        <div className="space-y-1">
+          <div className="text-sm text-slate-400 font-bold tracking-wider">SCORE</div>
+          <div className={`text-4xl font-mono font-bold leading-none ${settings.gameMode === 'legal' ? 'text-indigo-400' : 'text-cyan-400'}`}>{score.toLocaleString()}</div>
+        </div>
+        
+        <div className="flex-1 mx-8 max-w-xl">
+           <div className="flex justify-between text-xs text-slate-400 mb-1">
+             <span className="flex items-center gap-2">
+                TIME LIMIT
+                {settings.gameMode === 'legal' && <span className="bg-indigo-900 text-indigo-300 px-2 rounded-full text-[10px] font-bold border border-indigo-700 flex items-center gap-1"><Scale className="w-3 h-3"/> LEGAL MODE</span>}
+                {settings.realMode && <span className="bg-red-900 text-red-300 px-2 rounded-full text-[10px] font-bold border border-red-700 flex items-center gap-1"><Delete className="w-3 h-3"/> REAL MODE</span>}
+             </span>
+             <span className={`${timeLeft < 10 ? 'text-red-500 animate-pulse' : ''}`}>{timeLeft}s</span>
+           </div>
+           <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+             <div 
+               className={`h-full transition-all duration-1000 ease-linear ${timeLeft < 10 ? 'bg-red-500' : (settings.gameMode === 'legal' ? 'bg-indigo-500' : 'bg-cyan-500')}`}
+               style={{ width: `${(timeLeft / settings.duration) * 100}%` }}
+             />
+           </div>
+        </div>
+
+        <div className="space-y-1 text-right flex flex-col items-end gap-2">
+          {/* Pause Button */}
+          <button 
+            onClick={() => setIsPaused(true)}
+            className="p-2 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-400 hover:text-white transition-colors border border-slate-700"
+          >
+             <Pause className="w-5 h-5" />
+          </button>
+          
+          <div className="text-sm text-slate-400 font-bold tracking-wider">COMBO</div>
+          <div className="text-4xl font-mono font-bold text-yellow-400 leading-none">{combo}</div>
+        </div>
+      </div>
+
+      <div className="flex-1 flex flex-col items-center justify-center relative p-4">
+        
+        {/* Miss & Perfect Feedback Animation */}
+        {feedback && (
+            <div 
+                key={feedback.id} // Re-render on new feedback
+                className={`absolute top-1/4 text-4xl font-black tracking-widest z-50 pointer-events-none animate-float-up ${feedback.color}`}
+                style={{ textShadow: '0 0 10px rgba(0,0,0,0.5)' }}
+            >
+                {feedback.text}
+            </div>
+        )}
+
+        <div className={`w-full max-w-4xl bg-slate-800/50 rounded-3xl border p-12 text-center backdrop-blur-sm shadow-[0_0_50px_rgba(0,0,0,0.3)] transition-colors relative ${settings.gameMode === 'legal' ? 'border-indigo-900/50 shadow-indigo-900/20' : 'border-slate-700'} ${shake ? 'animate-shake' : ''}`}>
+          
+          {/* 苦手キー出題中の表示 */}
+          {currentWordData?.isWeakMode && (
+              <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 bg-yellow-600/90 text-white px-6 py-1 rounded-full text-sm font-bold shadow-lg border border-yellow-400/50 flex items-center gap-2 animate-pulse">
+                  <Target className="w-4 h-4" /> 
+                  WEAK KEY CHALLENGE
+                  <Target className="w-4 h-4" />
+              </div>
+          )}
+
+          <div className="mb-8 space-y-2">
+            <h2 className="text-5xl md:text-7xl font-black text-white drop-shadow-lg tracking-wide whitespace-nowrap overflow-hidden text-ellipsis">
+              {currentWordData?.text}
+            </h2>
+            <p className="text-2xl text-slate-400 font-medium">
+              {currentWordData?.kana}
+            </p>
+          </div>
+
+          <div className="mt-4 flex justify-center flex-wrap gap-1 text-5xl md:text-6xl font-mono font-bold tracking-wider h-24 items-center">
+             {currentWordData?.nodes.map((node, i) => (
+               <div key={i} className="relative inline-flex justify-center min-w-[1ch]">
+                 <div className="grid grid-stack items-center justify-items-center">
+                    {/* レイヤー1: 幅確保用のガイド（透明） */}
+                    <span className="row-start-1 col-start-1 opacity-0 select-none pointer-events-none whitespace-pre">
+                        {settings.displayMode === 'ime' 
+                            ? node.char // IMEモードはひらがな幅確保
+                            : node.selectedOption // Guideモードはローマ字幅確保
+                        }
+                    </span>
+
+                    {/* レイヤー2: 実際の表示 */}
+                    <span className={`row-start-1 col-start-1 whitespace-nowrap transition-colors duration-75 
+                        ${/* 完了状態の色 */
+                          node.isDone 
+                            ? (settings.gameMode === 'legal' ? 'text-indigo-400' : 'text-cyan-400')
+                            : ''
+                        }
+                    `}>
+                        {settings.displayMode === 'ime' ? (
+                            // IMEモード
+                            node.isDone ? node.char : (
+                                // 未完了: 入力文字を表示（RealModeなら色分け）
+                                settings.realMode ? (
+                                    <span>
+                                        {node.input.split('').map((char, idx) => {
+                                            const isValid = node.options.some(opt => opt.startsWith(node.input.slice(0, idx + 1)));
+                                            return (
+                                                <span key={idx} className={isValid ? (settings.gameMode === 'legal' ? 'text-indigo-400' : 'text-cyan-400') : 'text-red-500'}>
+                                                    {char}
+                                                </span>
+                                            );
+                                        })}
+                                        {/* カーソル: RealMode IMEの場合、文字の後ろに */}
+                                        {!node.isDone && i === currentWordData.nodes.findIndex(n => !n.isDone) && (
+                                            <span className="inline-block w-[2px] h-[1em] bg-yellow-400 animate-pulse align-middle ml-[1px] -mt-[0.2em]" />
+                                        )}
+                                    </span>
+                                ) : (
+                                    // Normal IME: 入力中はローマ字（青）、未入力は薄いひらがな
+                                    node.input.length > 0 ? (
+                                        <span className={settings.gameMode === 'legal' ? 'text-indigo-400' : 'text-cyan-400'}>
+                                            {node.input}
+                                        </span>
+                                    ) : (
+                                        <span className="text-slate-700">{node.char}</span>
+                                    )
+                                )
+                            )
+                        ) : (
+                            // Guide / Input モード
+                            settings.realMode ? (
+                                // Real Mode: Guide/Input
+                                <span>
+                                    {/* 入力済み部分 */}
+                                    {node.input.split('').map((char, idx) => {
+                                        const isValid = node.options.some(opt => opt.startsWith(node.input.slice(0, idx + 1)));
+                                        return (
+                                            <span key={idx} className={isValid ? (settings.gameMode === 'legal' ? 'text-indigo-400' : 'text-cyan-400') : 'text-red-500'}>
+                                                {char}
+                                            </span>
+                                        );
+                                    })}
+                                    {/* 未入力部分（ガイド） */}
+                                    {settings.displayMode === 'guide' && (
+                                        <span className="text-slate-700">
+                                            {node.selectedOption.slice(node.input.length)}
+                                        </span>
+                                    )}
+                                    {/* カーソル */}
+                                    {!node.isDone && i === currentWordData.nodes.findIndex(n => !n.isDone) && (
+                                         <span className="absolute inline-block w-[2px] h-[1em] bg-yellow-400 animate-pulse align-middle -mt-[0.2em]" 
+                                            style={{ marginLeft: `${node.input.length}ch`}}
+                                         />
+                                    )}
+                                </span>
+                            ) : (
+                                // Normal Mode: Guide/Input (Overlay method)
+                                <span className="relative">
+                                    <span className={settings.displayMode === 'guide' ? "text-slate-700" : "text-transparent"}>
+                                        {node.selectedOption}
+                                    </span>
+                                    <span className={`absolute top-0 left-0 ${settings.gameMode === 'legal' ? 'text-indigo-400' : 'text-cyan-400'} overflow-hidden whitespace-nowrap transition-all duration-75`}
+                                          style={{ width: `${(node.input.length / node.selectedOption.length) * 100}%` }}>
+                                        {node.selectedOption}
+                                    </span>
+                                </span>
+                            )
+                        )}
+                    </span>
+                 </div>
+
+                 {/* カーソル (Normal Mode Only) */}
+                 {!node.isDone && !settings.realMode && i === currentWordData.nodes.findIndex(n => !n.isDone) && (
+                   <div className="absolute bottom-0 left-0 w-full h-1 bg-yellow-400 animate-pulse" 
+                        style={{ 
+                            left: settings.displayMode === 'ime' 
+                                ? `${Math.min(node.input.length, node.char.length)}ch` 
+                                : `${node.input.length}ch`, 
+                            width: '1ch' 
+                        }} />
+                 )}
+               </div>
+             ))}
+          </div>
+        </div>
+
+        <div className="mt-12 text-slate-500 flex items-center gap-2">
+          {settings.gameMode === 'legal' ? <BookOpen className="w-5 h-5"/> : <Keyboard className="w-5 h-5"/>}
+          <span>
+            {settings.gameMode === 'legal' ? 'Legal Terms Mode Active' : 'Type keys to play'} (Flexible input supported)
+          </span>
+        </div>
+        
+        <div className="absolute bottom-4 right-4 text-xs text-slate-600 font-mono select-none">
+          © Tadashi Kotegawa
+        </div>
+      </div>
+    </div>
+  );
+}
